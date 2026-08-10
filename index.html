@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#211f2b" />
+    <meta name="description" content="掃除機目線で猫毛を集める60秒のスマホゲーム" />
+    <title>ねこ毛、いただきます。</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app" aria-label="ねこ毛掃除ゲーム">
+      <canvas id="game" aria-label="床すれすれの掃除機視点のゲーム画面"></canvas>
+
+      <section id="hud" class="hud" aria-live="polite">
+        <div class="hud-item"><span id="grams">0.0</span><small>g</small></div>
+        <div class="hud-item hud-time"><span id="time">60</span><small>sec</small></div>
+      </section>
+
+      <div id="message" class="message" aria-live="assertive"></div>
+
+      <section id="controls" class="controls" aria-label="ゲーム操作">
+        <div id="joystick" class="joystick" aria-label="移動スティック">
+          <span id="stick" class="stick"></span>
+        </div>
+        <button id="vacuum" class="vacuum-button" type="button" aria-label="吸い込む">
+          <span>吸</span>
+        </button>
+      </section>
+
+      <section id="intro" class="panel intro-panel">
+        <p class="eyeline">60 SEC CLEANUP</p>
+        <h1>ねこ毛、<br />いただきます。</h1>
+        <p>床すれすれを走って、ふわふわを集めよう。<br />ゲロだけは、そっと避けて。</p>
+        <div class="howto">
+          <span>左で移動</span><i></i><span>右で吸引</span>
+        </div>
+        <button id="start" class="primary" type="button">そうじをはじめる</button>
+      </section>
+
+      <section id="result" class="panel result-panel" hidden>
+        <p id="result-kicker" class="eyeline">CLEANUP COMPLETE</p>
+        <h2><span id="result-grams">0.0</span><small> g</small></h2>
+        <p id="result-copy">今日も、いい毛でした。</p>
+        <dl>
+          <div><dt>虎太郎の毛</dt><dd id="kotaro-count">0</dd></div>
+          <div><dt>ゆらぎの毛</dt><dd id="yuragi-count">0</dd></div>
+        </dl>
+        <button id="restart" class="primary" type="button">もういちど</button>
+      </section>
+    </main>
+    <script type="module" src="./src/game.js"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "neko-souji-game",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes serve . -l 4173",
+    "test": "node --test",
+    "build": "node --check src/core.js && node --check src/game.js"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  }
+}

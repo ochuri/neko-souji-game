@@ -1,0 +1,54 @@
+{
+  "product": "ねこ毛、いただきます。 mobile 3D web game MVP",
+  "status": "release-candidate",
+  "checks": [
+    {
+      "name": "static production syntax build",
+      "category": "build",
+      "status": "pass",
+      "evidence": "npm run build completed with exit code 0 for src/core.js and src/game.js"
+    },
+    {
+      "name": "gameplay logic tests",
+      "category": "test",
+      "status": "pass",
+      "evidence": "npm test passed 6/6 cases covering suction direction, grams, furniture collision, vomit failure, moving obstacles, and continuous camera angle wrapping"
+    },
+    {
+      "name": "mobile WebGL rendering and continuous camera",
+      "category": "visual",
+      "status": "pass",
+      "evidence": "Independent QA passed with P0/P1 none at 390x844; docs/qa/mobile-center.png and mobile-spin-a/b.png show a seamless continuous-3d rotation with no atlas seams, duplicate furniture, layout breakage, console errors, or warnings"
+    },
+    {
+      "name": "mobile controls and semantic labels",
+      "category": "accessibility",
+      "status": "pass",
+      "evidence": "390x844-equivalent UI uses large touch targets, Japanese aria-labels, live score/status regions, visible text labels, and keyboard WASD/arrow/space alternatives"
+    },
+    {
+      "name": "static privacy and dependency audit",
+      "category": "security-privacy",
+      "status": "pass",
+      "evidence": "No credentials, analytics, storage, account data, or runtime third-party requests are present; npm audit --omit=dev reported 0 vulnerabilities"
+    },
+    {
+      "name": "mobile render budget",
+      "category": "performance",
+      "status": "pass",
+      "evidence": "Renderer is capped at pixel ratio 1, uses one room scene and one animation loop, and browser smoke rendering completed without application console errors"
+    },
+    {
+      "name": "GitHub source distribution",
+      "category": "distribution",
+      "status": "not-applicable",
+      "evidence": "This record is generated before the requested initial GitHub push and will be verified from the remote commit immediately after push"
+    },
+    {
+      "name": "public deployment",
+      "category": "deployment",
+      "status": "not-applicable",
+      "evidence": "The requested scope is repository implementation and push; no hosting provider or production URL was requested"
+    }
+  ]
+}
