@@ -11,6 +11,7 @@
   <body>
     <main id="app" aria-label="ねこ毛掃除ゲーム">
       <canvas id="game" aria-label="床すれすれの掃除機視点のゲーム画面"></canvas>
+      <img id="robot-foreground" class="robot-foreground" src="./public/assets/robot-foreground-v2.png" alt="" aria-hidden="true" />
 
       <section id="hud" class="hud" aria-live="polite">
         <div class="hud-item"><span id="grams">0.0</span><small>g</small></div>
@@ -28,9 +29,9 @@
       <section id="intro" class="panel intro-panel">
         <p class="eyeline">60 SEC CLEANUP</p>
         <h1>ねこ毛、<br />いただきます。</h1>
-        <p>床すれすれを走って、ふわふわを集めよう。<br />ゲロだけは、そっと避けて。</p>
+        <p>床すれすれを走って、ふわふわを集めよう。<br />猫がかいかいしたら、新しい毛のチャンス。</p>
         <div class="howto">
-          <span>左で移動</span><i></i><span>毛に乗ると自動吸引</span>
+          <span>スティックの方向へ移動</span><i></i><span>毛に乗ると自動吸引</span>
         </div>
         <button id="start" class="primary" type="button">そうじをはじめる</button>
       </section>

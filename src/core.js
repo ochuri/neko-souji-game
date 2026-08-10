@@ -1,4 +1,4 @@
-export const ROOM = { minX: -5.6, maxX: 5.6, minZ: -1, maxZ: 15.8 };
+export const ROOM = { minX: -5.6, maxX: 5.6, minZ: -3.1, maxZ: 11.8 };
 
 export function distance(a, b) {
   return Math.hypot(a.x - b.x, a.z - b.z);
@@ -25,21 +25,37 @@ export function keyboardTurn(keys) {
   return turn;
 }
 
+export function joystickHeading(anchorAngle, x, y) {
+  return normalizedAngle(anchorAngle + Math.atan2(x, -y));
+}
+
+export function turnToward(currentAngle, targetAngle, maxStep) {
+  const delta = normalizedAngle(targetAngle - currentAngle);
+  return normalizedAngle(currentAngle + clamp(delta, -maxStep, maxStep));
+}
+
 export function isInsideRect(point, rect, padding = 0) {
   return point.x > rect.x - rect.w / 2 - padding && point.x < rect.x + rect.w / 2 + padding &&
     point.z > rect.z - rect.d / 2 - padding && point.z < rect.z + rect.d / 2 + padding;
 }
 
 export function resolveMovement(player, next, solids, radius = 0.25) {
-  const bounded = {
+  const full = {
     x: clamp(next.x, ROOM.minX + radius, ROOM.maxX - radius),
     z: clamp(next.z, ROOM.minZ + radius, ROOM.maxZ - radius),
   };
-  for (const solid of solids) {
-    if (solid.kind === "circle" && circlesOverlap(bounded, radius, solid, solid.radius)) return { ...player, hit: solid.id };
-    if (solid.kind === "rect" && isInsideRect(bounded, solid, radius)) return { ...player, hit: solid.id };
-  }
-  return { ...bounded, hit: null };
+  const collisionAt = (point) => solids.find((solid) =>
+    solid.kind === "circle" ? circlesOverlap(point, radius, solid, solid.radius) :
+      solid.kind === "rect" ? isInsideRect(point, solid, radius) : false
+  );
+  const hit = collisionAt(full);
+  if (!hit) return { ...full, hit: null };
+
+  const slideX = { x: full.x, z: player.z };
+  if (!collisionAt(slideX)) return { ...slideX, hit: hit.id };
+  const slideZ = { x: player.x, z: full.z };
+  if (!collisionAt(slideZ)) return { ...slideZ, hit: hit.id };
+  return { ...player, hit: hit.id };
 }
 
 export function canVacuum(player, hair, suction, maxDistance = 2.05) {
@@ -80,6 +96,19 @@ export function collectTouchedHair(player, hairs, maxDistance = .55) {
   return { grams, kotaro, yuragi };
 }
 
+export function createDroppedHair(entity, id) {
+  const sideAngle = entity.angle + Math.PI / 2;
+  return {
+    id,
+    x: entity.x + Math.sin(sideAngle) * .34,
+    z: entity.z + Math.cos(sideAngle) * .34,
+    grams: entity.type === "yuragi" ? .8 : .6,
+    cat: entity.type,
+    collected: false,
+    dropped: true,
+  };
+}
+
 export function stepWanderer(entity, dt, now, room = ROOM) {
   if (now >= entity.turnAt) {
     const phase = Math.sin(now * 0.001 + entity.seed * 4.13);
@@ -102,12 +131,12 @@ export function hitVomit(player, vomits, radius = .31) {
 
 export function createInitialHair() {
   const raw = [
-    [-.48, 1.55, .6, "kotaro"], [.62, 1.95, .8, "yuragi"], [-4.75, 2.7, .7, "kotaro"],
-    [4.78, 2.35, .7, "yuragi"], [5.0, 5.5, .5, "kotaro"], [4.7, 13.8, .9, "yuragi"],
-    [-4.2, 5.75, .8, "yuragi"], [-3.0, 6.2, .6, "kotaro"], [-2.0, 6.75, 1.0, "yuragi"],
-    [2.1, 4.8, .6, "kotaro"], [2.9, 7.1, .7, "yuragi"], [.7, 11.8, .5, "kotaro"],
-    [-3.9, 14.4, .8, "yuragi"], [3.6, 10.3, .6, "kotaro"], [-.8, 3.5, .5, "kotaro"],
-    [1.5, 14.8, .9, "yuragi"], [-3.1, 1.2, .5, "kotaro"], [3.9, 3.4, .8, "yuragi"],
+    [2.4, 3.2, .6, "kotaro"], [.62, 1.95, .8, "yuragi"], [-4.75, 2.7, .7, "kotaro"],
+    [4.78, 2.35, .7, "yuragi"], [5.0, 5.5, .5, "kotaro"], [4.7, 10.7, .9, "yuragi"],
+    [-4.2, 5.0, .8, "yuragi"], [-3.0, 5.7, .6, "kotaro"], [-2.0, 6.35, 1.0, "yuragi"],
+    [2.1, 4.25, .6, "kotaro"], [2.9, 6.5, .7, "yuragi"], [.7, 9.7, .5, "kotaro"],
+    [-3.9, 10.4, .8, "yuragi"], [3.6, 8.9, .6, "kotaro"], [-.8, 3.5, .5, "kotaro"],
+    [1.5, 10.8, .9, "yuragi"], [-3.1, 1.2, .5, "kotaro"], [3.9, 3.4, .8, "yuragi"],
   ];
   return raw.map(([x, z, grams, cat], id) => ({ id, x, z, grams, cat, collected: false }));
 }

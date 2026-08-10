@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canVacuum, collectNearbyHair, collectTouchedHair, hitVomit, keyboardTurn, normalizedAngle, resolveMovement, stepWanderer } from "../src/core.js";
+import { canVacuum, collectNearbyHair, collectTouchedHair, createDroppedHair, hitVomit, joystickHeading, keyboardTurn, normalizedAngle, resolveMovement, stepWanderer, turnToward } from "../src/core.js";
 
 test("vacuum only collects hair in front while suction is active", () => {
   const player = { x: 0, z: 0, angle: 0 };
@@ -28,11 +28,12 @@ test("robot automatically collects hair it drives over", () => {
   assert.equal(hairs[1].collected, false);
 });
 
-test("furniture collision blocks movement", () => {
+test("furniture collision slides along the open axis without entering the leg", () => {
   const player = { x: 0, z: 0 };
   const moved = resolveMovement(player, { x: 1, z: 1 }, [{ id: "leg", kind: "circle", x: 1, z: 1, radius: .22 }]);
   assert.equal(moved.hit, "leg");
-  assert.equal(moved.x, 0);
+  assert.notDeepEqual({ x: moved.x, z: moved.z }, { x: 1, z: 1 });
+  assert.ok(moved.x === 1 || moved.z === 1);
 });
 
 test("vomit collision is a fail condition", () => {
@@ -56,4 +57,25 @@ test("keyboard left and right turn in the expected directions", () => {
   assert.equal(keyboardTurn(new Set(["ArrowRight"])), -1);
   assert.equal(keyboardTurn(new Set(["a"])), 1);
   assert.equal(keyboardTurn(new Set(["d"])), -1);
+});
+
+test("joystick diagonal chooses one stable heading instead of accumulating rotation", () => {
+  const target = joystickHeading(0, .72, -.72);
+  assert.ok(Math.abs(target - Math.PI / 4) < 1e-9);
+  let angle = 0;
+  for (let i = 0; i < 30; i += 1) angle = turnToward(angle, target, .08);
+  assert.ok(Math.abs(angle - target) < 1e-9);
+  assert.equal(turnToward(angle, target, .08), angle);
+});
+
+test("a scratching cat drops a new collectible hair beside itself", () => {
+  const hair = createDroppedHair({ x: 2, z: 3, angle: 0, type: "yuragi" }, 24);
+  assert.equal(hair.id, 24);
+  assert.equal(hair.cat, "yuragi");
+  assert.equal(hair.grams, .8);
+  assert.equal(hair.dropped, true);
+  assert.equal(hair.collected, false);
+  assert.ok(Math.hypot(hair.x - 2, hair.z - 3) > .3);
+  assert.deepEqual(collectTouchedHair({ x: hair.x, z: hair.z }, [hair]), { grams: .8, kotaro: 0, yuragi: 1 });
+  assert.equal(hair.collected, true);
 });

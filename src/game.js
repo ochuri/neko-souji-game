@@ -2,13 +2,16 @@ import * as THREE from "../public/vendor/three.module.js";
 import {
   circlesOverlap,
   collectTouchedHair,
+  createDroppedHair,
   createInitialHair,
   hitVomit,
   isInsideRect,
+  joystickHeading,
   keyboardTurn,
   normalizedAngle,
   resolveMovement,
   stepWanderer,
+  turnToward,
 } from "./core.js";
 
 const canvas = document.querySelector("#game");
@@ -28,29 +31,35 @@ const ui = {
   joystick: document.querySelector("#joystick"),
   stick: document.querySelector("#stick"),
   message: document.querySelector("#message"),
+  robot: document.querySelector("#robot-foreground"),
 };
 
 const CHARACTER_TEMPLATES = {
-  kotaro: { id: "kotaro", type: "kotaro", x: -1.35, z: 4.25, angle: .8, speed: .42, radius: .58, turnAt: 0, seed: 2 },
-  yuragi: { id: "yuragi", type: "yuragi", x: .55, z: 6.15, angle: -1.4, speed: .28, radius: .68, turnAt: 0, seed: 7 },
-  baby: { id: "baby", type: "baby", x: 1.05, z: 3.95, angle: 2.1, speed: .34, radius: .62, turnAt: 0, seed: 11 },
+  kotaro: { id: "kotaro", type: "kotaro", x: 3.2, z: 8.1, angle: .8, speed: .42, radius: .64, turnAt: 0, seed: 2 },
+  yuragi: { id: "yuragi", type: "yuragi", x: -.15, z: 8.8, angle: -1.4, speed: .28, radius: .74, turnAt: 0, seed: 7 },
+  baby: { id: "baby", type: "baby", x: -3.7, z: 8.2, angle: 2.1, speed: .34, radius: .68, turnAt: 0, seed: 11 },
 };
 const ROSTERS = [["kotaro", "baby"], ["yuragi", "baby"], ["kotaro", "yuragi"]];
 let rosterTurn = 0;
 
-const sofa = { id: "sofa", x: -3.15, z: 6.65, w: 4.35, d: 2.55, clearance: .34 };
-const tableArea = { id: "table", x: 2.7, z: 7.55, w: 4.1, d: 2.65 };
+const sofa = { id: "sofa", x: 3.15, z: 5.65, w: 4.35, d: 2.55, clearance: .5 };
+const tableArea = { id: "table", x: -2.7, z: 6.55, w: 4.1, d: 2.65 };
 const solids = [];
 for (const [id, x, z] of [
-  ["sofa-leg-1", -4.82, 5.7], ["sofa-leg-2", -1.48, 5.7], ["sofa-leg-3", -4.82, 7.6], ["sofa-leg-4", -1.48, 7.6],
-  ["table-leg-1", .95, 6.5], ["table-leg-2", 4.45, 6.5], ["table-leg-3", .95, 8.6], ["table-leg-4", 4.45, 8.6],
-  ["chair-a1", 3.05, 4.02], ["chair-a2", 3.95, 4.02], ["chair-a3", 3.05, 4.88], ["chair-a4", 3.95, 4.88],
-  ["chair-b1", .34, 6.7], ["chair-b2", 1.16, 6.7], ["chair-b3", .34, 7.52], ["chair-b4", 1.16, 7.52],
+  ["sofa-leg-1", 4.82, 4.7], ["sofa-leg-2", 1.48, 4.7], ["sofa-leg-3", 4.82, 6.6], ["sofa-leg-4", 1.48, 6.6],
+  ["table-leg-1", -.95, 5.5], ["table-leg-2", -4.45, 5.5], ["table-leg-3", -.95, 7.6], ["table-leg-4", -4.45, 7.6],
+  ["chair-a1", -3.5, 4.2], ["chair-a2", -4.3, 4.2], ["chair-a3", -3.5, 5.0], ["chair-a4", -4.3, 5.0],
+  ["chair-b1", -3.6, 8.0], ["chair-b2", -4.4, 8.0], ["chair-b3", -3.6, 8.8], ["chair-b4", -4.4, 8.8],
 ]) solids.push({ id, kind: "circle", x, z, radius: id.startsWith("table") ? .18 : .15 });
+solids.push(
+  { id: "side-cabinet", kind: "rect", x: 5.28, z: 2.25, w: 1.5, d: .58 },
+  { id: "left-bookcase", kind: "rect", x: -5.15, z: 6.8, w: .72, d: 2.7 },
+  { id: "right-console", kind: "rect", x: 5.16, z: 8.7, w: .72, d: 2.35 },
+);
 
 const vomits = [
   { id: "v1", x: .78, z: 2.8, radius: .38 },
-  { id: "v2", x: -2.25, z: 12.25, radius: .36 },
+  { id: "v2", x: -2.25, z: 10.25, radius: .36 },
 ];
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance" });
@@ -64,27 +73,27 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xe8d7d1);
 scene.fog = new THREE.Fog(0xe8d7d1, 14, 31);
-const camera = new THREE.PerspectiveCamera(71, 1, .06, 28);
+const camera = new THREE.PerspectiveCamera(78, 1, .06, 28);
 scene.add(camera);
 
 const world = new THREE.Group();
 scene.add(world);
-const environment = new THREE.Group();
-scene.add(environment);
 const hairObjects = new Map();
+const hairTextureCache = new Map();
 const characterObjects = new Map();
 const characterShadows = new Map();
+const furnitureMeshes = { sofa: [], table: [] };
+const furnitureFacades = { sofa: null, table: null };
 const keys = new Set();
-const input = { x: 0, y: 0, suction: false, joystickPointer: null };
-const visual = { x: 0, z: 0, angle: 0 };
+const input = { x: 0, y: 0, suction: false, joystickPointer: null, anchorAngle: 0 };
+const visual = { x: 0, z: 0, angle: 0, pitch: .025 };
 let state = makeState();
 let lastFrame = performance.now();
 let messageTimer = 0;
 let audio = null;
 let robotRing = null;
 let suctionLight = null;
-let sofaUnderside = null;
-let tableUnderside = null;
+let giantHairTexture = null;
 
 function makeState() {
   return {
@@ -95,12 +104,17 @@ function makeState() {
     counts: { kotaro: 0, yuragi: 0 },
     remaining: 60,
     lastCollisionAt: 0,
-    wanderers: ROSTERS[rosterTurn++ % ROSTERS.length].map((id) => ({ ...CHARACTER_TEMPLATES[id] })),
+    wanderers: ROSTERS[rosterTurn++ % ROSTERS.length].map((id) => ({
+      ...CHARACTER_TEMPLATES[id],
+      scratchAt: performance.now() + 4500 + CHARACTER_TEMPLATES[id].seed * 420,
+      scratchingUntil: 0,
+      scratchDropped: false,
+    })),
   };
 }
 
 function box(w, h, d, color, x, y, z, texture = null) {
-  const material = new THREE.MeshStandardMaterial({ color: texture ? 0xffffff : color, roughness: .82, metalness: 0, map: texture });
+  const material = new THREE.MeshStandardMaterial({ color: texture ? 0xffffff : color, roughness: .82, metalness: 0, map: texture, bumpMap: texture, bumpScale: texture ? .014 : 0 });
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
   mesh.position.set(x, y, z);
   mesh.castShadow = true;
@@ -110,6 +124,31 @@ function box(w, h, d, color, x, y, z, texture = null) {
     const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x604b52, transparent: true, opacity: .22 }));
     mesh.add(outline);
   }
+  return mesh;
+}
+
+function roundedBox(w, h, d, radius, color, x, y, z, texture = null) {
+  const r = Math.min(radius, w / 2, h / 2);
+  const shape = new THREE.Shape();
+  shape.moveTo(-w / 2 + r, -h / 2);
+  shape.lineTo(w / 2 - r, -h / 2); shape.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+  shape.lineTo(w / 2, h / 2 - r); shape.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+  shape.lineTo(-w / 2 + r, h / 2); shape.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+  shape.lineTo(-w / 2, -h / 2 + r); shape.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: d,
+    bevelEnabled: true,
+    bevelSegments: 3,
+    bevelSize: Math.min(.045, r * .35),
+    bevelThickness: .035,
+    curveSegments: 5,
+  });
+  geometry.translate(0, 0, -d / 2);
+  const material = new THREE.MeshStandardMaterial({ color: texture ? 0xffffff : color, roughness: .8, metalness: 0, map: texture, bumpMap: texture, bumpScale: texture ? .018 : 0 });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; world.add(mesh);
+  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 28), new THREE.LineBasicMaterial({ color: 0x604b52, transparent: true, opacity: .2 }));
+  mesh.add(outline);
   return mesh;
 }
 
@@ -130,9 +169,9 @@ function pixelTexture(width, height, draw, repeatX = 1, repeatY = 1) {
 
 function buildRoom() {
   const floorTexture = pixelTexture(192, 256, (g, w, h) => {
-    g.fillStyle = "#c78f72"; g.fillRect(0, 0, w, h);
+    g.fillStyle = "#d09a78"; g.fillRect(0, 0, w, h);
     for (let x = 0; x < w; x += 32) {
-      g.fillStyle = x % 64 ? "#cc9678" : "#bd856c"; g.fillRect(x, 0, 31, h);
+      g.fillStyle = x % 64 ? "#d8a07c" : "#c58d70"; g.fillRect(x, 0, 31, h);
       g.fillStyle = "rgba(85,55,51,.2)"; g.fillRect(x + 31, 0, 1, h);
     }
     for (let y = 0; y < h; y += 64) { g.fillStyle = "rgba(255,214,184,.16)"; g.fillRect(0, y, w, 1); }
@@ -141,9 +180,9 @@ function buildRoom() {
       g.fillStyle = i % 3 ? "rgba(255,223,192,.12)" : "rgba(72,47,44,.10)"; g.fillRect(x, y, 2 + i % 5, 1);
     }
   }, 3, 4);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(11.2, 17.2), new THREE.MeshStandardMaterial({ map: floorTexture, roughness: .7, metalness: .03 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(11.2, 15.2), new THREE.MeshPhysicalMaterial({ map: floorTexture, roughness: .55, metalness: .02, clearcoat: .16, clearcoatRoughness: .6 }));
   floor.rotation.x = -Math.PI / 2;
-  floor.position.set(0, 0, 7.4);
+  floor.position.set(0, 0, 4.3);
   floor.receiveShadow = true;
   world.add(floor);
 
@@ -160,6 +199,17 @@ function buildRoom() {
     g.fillStyle = "#dfc9c8"; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 180; i += 1) { g.fillStyle = i % 2 ? "rgba(255,245,232,.1)" : "rgba(111,87,101,.06)"; g.fillRect((i * 31) % w, (i * 57) % h, 1, 2); }
   }, 3, 3);
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(11.2, 15.2), new THREE.MeshBasicMaterial({ color: 0xeadedd, side: THREE.DoubleSide }));
+  ceiling.rotation.x = Math.PI / 2; ceiling.position.set(0, 8, 4.3); ceiling.receiveShadow = true; world.add(ceiling);
+  box(11.2, 8, .12, 0xdfc9c8, 0, 4, 11.94, wallTexture);
+  box(11.2, 8, .12, 0xdfc9c8, 0, 4, -3.16, wallTexture);
+  box(.12, 8, 15.2, 0xdfc9c8, -5.54, 4, 4.3, wallTexture);
+  box(.12, 8, 15.2, 0xdfc9c8, 5.54, 4, 4.3, wallTexture);
+  box(11.05, .13, .16, 0xc3a6a8, 0, .08, 11.82);
+  box(11.05, .13, .16, 0xc3a6a8, 0, .08, -3.04);
+  box(.16, .13, 14.9, 0xc3a6a8, -5.43, .08, 4.38);
+  box(.16, .13, 14.9, 0xc3a6a8, 5.43, .08, 4.38);
+
   const hemi = new THREE.HemisphereLight(0xfff0e4, 0x766477, 1.05);
   scene.add(hemi);
   scene.add(new THREE.AmbientLight(0xfff5ee, .42));
@@ -173,6 +223,65 @@ function buildRoom() {
   fill.position.set(-4, 1.5, 5); scene.add(fill);
   buildSofa();
   buildTable();
+  buildDecor();
+}
+
+async function buildBackWallArt() {
+  const texture = await new THREE.TextureLoader().loadAsync("./public/assets/back-wall-v2.png");
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  const wallArt = new THREE.Mesh(
+    new THREE.PlaneGeometry(11.05, 7.82),
+    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, toneMapped: false })
+  );
+  wallArt.position.set(0, 4, 11.82);
+  wallArt.rotation.y = Math.PI;
+  world.add(wallArt);
+}
+
+async function buildSideWallArt() {
+  const texture = await new THREE.TextureLoader().loadAsync("./public/assets/side-wall-v2.png");
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, toneMapped: false });
+  const left = new THREE.Mesh(new THREE.PlaneGeometry(15.0, 7.82), material);
+  left.position.set(-5.46, 4, 4.3); left.rotation.y = Math.PI / 2; world.add(left);
+  const right = new THREE.Mesh(new THREE.PlaneGeometry(15.0, 7.82), material.clone());
+  right.position.set(5.46, 4, 4.3); right.rotation.y = -Math.PI / 2; world.add(right);
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(11.05, 7.82), material.clone());
+  front.position.set(0, 4, -3.08); world.add(front);
+}
+
+async function buildSofaFacade() {
+  const texture = await new THREE.TextureLoader().loadAsync("./public/assets/sofa-facade-cropped-v2.png");
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  const facade = new THREE.Mesh(
+    new THREE.PlaneGeometry(5.4, 2.8),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: .04, side: THREE.FrontSide, toneMapped: false }),
+  );
+  facade.position.set(2.55, 1.34, 4.47);
+  facade.rotation.y = Math.PI;
+  facade.renderOrder = 2;
+  world.add(facade);
+  furnitureFacades.sofa = facade;
+
+  const tableTexture = await new THREE.TextureLoader().loadAsync("./public/assets/table-facade-cropped-v2.png");
+  tableTexture.colorSpace = THREE.SRGBColorSpace;
+  tableTexture.magFilter = THREE.NearestFilter;
+  tableTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  const tableFacade = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.8, 2.85),
+    new THREE.MeshBasicMaterial({ map: tableTexture, transparent: true, alphaTest: .04, side: THREE.FrontSide, toneMapped: false }),
+  );
+  tableFacade.position.set(-2.72, 1.38, 5.22);
+  tableFacade.rotation.y = Math.PI;
+  tableFacade.renderOrder = 2;
+  world.add(tableFacade);
+  furnitureFacades.table = tableFacade;
 }
 
 function buildCollisionGuides() {
@@ -190,57 +299,78 @@ function buildCollisionGuides() {
   }
 }
 
-async function buildEnvironment() {
-  const loader = new THREE.TextureLoader();
-  const textures = await Promise.all([
-    loader.loadAsync("./public/assets/room-env-a.png"),
-    loader.loadAsync("./public/assets/room-env-b.png"),
-    loader.loadAsync("./public/assets/room-env-c.png"),
-  ]);
-  const atlas = document.createElement("canvas");
-  atlas.width = 3072; atlas.height = 1024;
-  const g = atlas.getContext("2d");
-  const sequence = [0, 1, 2, 0, 1, 2];
-  const panelWidth = atlas.width / sequence.length;
-  sequence.forEach((textureIndex, index) => {
-    g.save();
-    g.translate((index + 1) * panelWidth, 0);
-    g.scale(-1, 1);
-    g.drawImage(textures[textureIndex].image, 0, 0, panelWidth + 1, atlas.height);
-    g.restore();
-  });
-  const panorama = new THREE.CanvasTexture(atlas);
-  panorama.colorSpace = THREE.SRGBColorSpace;
-  panorama.magFilter = THREE.NearestFilter;
-  panorama.minFilter = THREE.LinearMipmapLinearFilter;
-  const cylinder = new THREE.Mesh(
-    new THREE.CylinderGeometry(17, 17, 28, 96, 1, true),
-    new THREE.MeshBasicMaterial({ map: panorama, side: THREE.BackSide, toneMapped: false })
-  );
-  cylinder.position.y = -1.35;
-  cylinder.rotation.y = Math.PI / 2;
-  environment.add(cylinder);
-}
-
 function buildSofa() {
+  const childStart = world.children.length;
   const fabric = pixelTexture(64, 64, (g, w, h) => {
-    g.fillStyle = "#67596e"; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 180; i += 1) { g.fillStyle = i % 3 ? "rgba(255,244,249,.07)" : "rgba(35,26,41,.12)"; g.fillRect((i * 17) % w, (i * 31) % h, 1, 2); }
+    g.fillStyle = "#9c8eae"; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 180; i += 1) { g.fillStyle = i % 3 ? "rgba(255,244,249,.12)" : "rgba(52,41,65,.11)"; g.fillRect((i * 17) % w, (i * 31) % h, 1, 2); }
   }, 3, 2);
-  const underside = new THREE.Mesh(new THREE.PlaneGeometry(4.35, 2.35), new THREE.MeshStandardMaterial({ map: fabric, roughness: 1, side: THREE.FrontSide }));
-  underside.rotation.x = Math.PI / 2; underside.position.set(-3.15, .35, 6.65); underside.receiveShadow = true; world.add(underside);
-  sofaUnderside = underside;
+  roundedBox(4.18, .24, 2.24, .1, 0x877a98, 3.15, .64, 5.65, fabric);
+  roundedBox(1.92, .42, 2.02, .16, 0xb1a5bc, 4.18, .95, 5.57, fabric);
+  roundedBox(1.92, .42, 2.02, .16, 0xa89bb6, 2.12, .95, 5.57, fabric);
+  roundedBox(4.35, 1.18, .34, .14, 0x8f819f, 3.15, 1.5, 6.66, fabric);
+  roundedBox(.35, .72, 2.2, .14, 0x8f819f, 5.12, 1.21, 5.65, fabric);
+  roundedBox(.35, .72, 2.2, .14, 0x8f819f, 1.18, 1.21, 5.65, fabric);
+  roundedBox(1.82, .18, 1.8, .08, 0xb3a7be, 4.18, 1.29, 5.57, fabric);
+  roundedBox(1.82, .18, 1.8, .08, 0xaa9db8, 2.12, 1.29, 5.57, fabric);
+  const piping = new THREE.MeshStandardMaterial({ color: 0xd8ccdc, roughness: .92 });
+  for (const x of [2.12, 4.18]) {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(1.7, .026, .026), piping);
+    seam.position.set(x, 1.33, 4.55); seam.castShadow = true; world.add(seam);
+  }
+  const centerSeam = new THREE.Mesh(new THREE.BoxGeometry(.028, .28, .028), piping);
+  centerSeam.position.set(3.15, .99, 4.54); world.add(centerSeam);
+  for (const x of [2.12, 3.15, 4.18]) {
+    const button = new THREE.Mesh(new THREE.SphereGeometry(.045, 8, 5), new THREE.MeshStandardMaterial({ color: 0x766983, roughness: 1 }));
+    button.position.set(x, 1.54, 6.47); world.add(button);
+  }
+  for (const [x, z] of [[4.82,4.7],[1.48,4.7],[4.82,6.6],[1.48,6.6]]) box(.28, .52, .28, 0x594345, x, .26, z);
+  const pillow = roundedBox(.82, .56, .18, .14, 0xd3a1a8, 4.25, 1.64, 6.39); pillow.rotation.z = .14;
+  const blanket = pixelTexture(48, 72, (g, w, h) => {
+    g.fillStyle = "#ead6c2"; g.fillRect(0, 0, w, h);
+    for (let y = 6; y < h; y += 12) { g.fillStyle = "rgba(179,137,130,.22)"; g.fillRect(0, y, w, 2); }
+    for (let x = 5; x < w; x += 9) { g.fillStyle = "rgba(255,247,231,.25)"; g.fillRect(x, 0, 2, h); }
+  }, 1, 1);
+  box(.74, .7, .06, 0xead6c2, 3.76, .92, 4.52, blanket);
+  const undersideTexture = pixelTexture(128, 80, (g, w, h) => {
+    g.fillStyle = "#3f354d"; g.fillRect(0, 0, w, h);
+    g.fillStyle = "#644b45"; g.fillRect(0, 0, w, 8); g.fillRect(0, h - 8, w, 8); g.fillRect(0, 0, 8, h); g.fillRect(w - 8, 0, 8, h);
+    g.strokeStyle = "#a18a79"; g.lineWidth = 4;
+    for (let x = -40; x < w + 40; x += 24) { g.beginPath(); g.moveTo(x, 8); g.lineTo(x + 40, h - 8); g.stroke(); }
+    g.fillStyle = "rgba(241,224,205,.18)";
+    for (let y = 14; y < h - 8; y += 13) for (let x = 13; x < w - 8; x += 17) g.fillRect(x, y, 2, 2);
+  });
+  const underside = new THREE.Mesh(new THREE.PlaneGeometry(4.0, 2.08), new THREE.MeshStandardMaterial({ map: undersideTexture, side: THREE.DoubleSide, roughness: 1 }));
+  underside.rotation.x = -Math.PI / 2; underside.position.set(3.15, .505, 5.65); world.add(underside);
+  const frameWood = pixelTexture(48, 24, (g, w, h) => {
+    g.fillStyle = "#6b4d43"; g.fillRect(0, 0, w, h);
+    for (let y = 3; y < h; y += 6) { g.fillStyle = "rgba(237,180,132,.22)"; g.fillRect(0, y, w, 1); }
+  }, 3, 1);
+  for (const z of [4.78, 5.65, 6.5]) roundedBox(3.82, .095, .14, .035, 0x6b4d43, 3.15, .465, z, frameWood);
+  furnitureMeshes.sofa.push(...world.children.slice(childStart));
 }
 
 function buildTable() {
+  const childStart = world.children.length;
   const wood = pixelTexture(64, 64, (g, w, h) => {
     g.fillStyle = "#825b48"; g.fillRect(0, 0, w, h);
     for (let y = 5; y < h; y += 11) { g.fillStyle = "rgba(244,188,132,.15)"; g.fillRect(0, y, w, 2); }
     for (let i = 0; i < 16; i += 1) { g.fillStyle = "rgba(67,39,36,.16)"; g.fillRect((i * 23) % w, (i * 37) % h, 13, 1); }
   }, 3, 2);
-  const underside = new THREE.Mesh(new THREE.PlaneGeometry(4.1, 2.65), new THREE.MeshStandardMaterial({ map: wood, roughness: .92, side: THREE.FrontSide }));
-  underside.rotation.x = Math.PI / 2; underside.position.set(2.7, .85, 7.55); underside.receiveShadow = true; world.add(underside);
-  tableUnderside = underside;
+  roundedBox(4.1, .18, 2.65, .07, 0x825b48, -2.7, 1.0, 6.55, wood);
+  for (const [x, z] of [[-.95,5.5],[-4.45,5.5],[-.95,7.6],[-4.45,7.6]]) box(.26, .92, .26, 0x654535, x, .46, z, wood);
+  const undersideTexture = pixelTexture(128, 80, (g, w, h) => {
+    g.fillStyle = "#58372d"; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 22) { g.fillStyle = x % 44 ? "#684335" : "#4e3028"; g.fillRect(x, 0, 20, h); }
+    g.fillStyle = "#39231f"; g.fillRect(0, 8, w, 7); g.fillRect(0, h - 15, w, 7); g.fillRect(8, 0, 7, h); g.fillRect(w - 15, 0, 7, h);
+    g.strokeStyle = "rgba(226,164,108,.25)"; g.lineWidth = 2;
+    for (let y = 22; y < h; y += 18) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y - 6); g.stroke(); }
+  });
+  const underside = new THREE.Mesh(new THREE.PlaneGeometry(3.9, 2.45), new THREE.MeshStandardMaterial({ map: undersideTexture, side: THREE.DoubleSide, roughness: .88 }));
+  underside.rotation.x = -Math.PI / 2; underside.position.set(-2.7, .895, 6.55); world.add(underside);
+  buildChair(-3.9, 4.6, 0x987f9f);
+  buildChair(-4.0, 8.4, 0xa093ab, Math.PI);
+  furnitureMeshes.table.push(...world.children.slice(childStart));
 }
 
 function buildChair(x, z, color, rotation = 0) {
@@ -249,20 +379,13 @@ function buildChair(x, z, color, rotation = 0) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color: shade, roughness: .88 }));
     mesh.position.set(px, py, pz); mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); return mesh;
   };
-  add(1.2, .16, 1.18, 0, .58, 0);
-  add(.72, .16, .12, 0, .92, .5, color);
+  for (let i = 0; i < 4; i += 1) add(.22, .12, 1.08, -.39 + i * .26, .58, 0, i % 2 ? color : color - 0x080508);
+  add(.82, .13, .12, 0, .93, .5, color);
+  add(.82, .13, .12, 0, 1.17, .5, color);
   for (const [px, pz] of [[-.43,-.43],[.43,-.43],[-.43,.43],[.43,.43]]) add(.16, .58, .16, px, .29, pz, 0x5e4950);
 }
 
 function buildDecor() {
-  box(1.35, .8, .45, 0x9b715d, -1.0, .4, 14.9);
-  box(.38, .85, .38, 0xc7aaa6, -1.0, 1.22, 14.95);
-  const plant = new THREE.Group(); plant.position.set(-1.0, 1.78, 14.85); world.add(plant);
-  for (let i = 0; i < 10; i += 1) {
-    const leaf = new THREE.Mesh(new THREE.SphereGeometry(.14, 6, 4), new THREE.MeshStandardMaterial({ color: i % 2 ? 0x768d66 : 0x91a978, roughness: 1 }));
-    leaf.scale.set(1.5, .55, .65); leaf.position.set(Math.sin(i * 2.2) * .28, (i % 4) * .17, Math.cos(i * 1.8) * .18); leaf.rotation.z = i; plant.add(leaf);
-  }
-
   const artTexture = pixelTexture(80, 64, (g, w, h) => {
     g.fillStyle = "#e9c5c4"; g.fillRect(0, 0, w, h);
     g.fillStyle = "#b9b4d5"; g.fillRect(0, 30, w, 34);
@@ -276,11 +399,6 @@ function buildDecor() {
     const picture = new THREE.Mesh(new THREE.PlaneGeometry(1.34, .96), new THREE.MeshBasicMaterial({ map: artTexture, side: THREE.DoubleSide }));
     picture.position.set(x + Math.cos(rotation) * .008, 1.55, z - Math.sin(rotation) * .008); picture.rotation.y = rotation; world.add(picture);
   };
-  makeWallArt(-5.52, 2.25, Math.PI / 2);
-  makeWallArt(-5.52, 11.6, Math.PI / 2);
-  makeWallArt(5.52, 2.25, -Math.PI / 2);
-  makeWallArt(5.52, 11.9, -Math.PI / 2);
-
   box(1.45, .58, .5, 0xc39a82, 5.28, .29, 2.25);
   box(.75, .08, .36, 0xead6c6, 5.22, .63, 2.24);
   const sidePlant = new THREE.Group(); sidePlant.position.set(5.18, .7, 2.24); world.add(sidePlant);
@@ -290,11 +408,28 @@ function buildDecor() {
   }
   const ball = new THREE.Mesh(new THREE.SphereGeometry(.15, 8, 6), new THREE.MeshStandardMaterial({ color: 0xd9a0a8, roughness: 1 }));
   ball.position.set(-4.75, .15, 11.2); ball.castShadow = true; world.add(ball);
+
+  const shelfWood = pixelTexture(48, 48, (g, w, h) => {
+    g.fillStyle = "#9b715d"; g.fillRect(0, 0, w, h);
+    for (let y = 5; y < h; y += 9) { g.fillStyle = "rgba(244,190,145,.2)"; g.fillRect(0, y, w, 1); }
+  }, 2, 2);
+  box(.58, 1.32, 2.55, 0x9b715d, -5.16, .66, 6.8, shelfWood);
+  for (const y of [.35, .72, 1.08]) box(.64, .07, 2.4, 0x795445, -4.84, y, 6.8, shelfWood);
+  for (let i = 0; i < 9; i += 1) {
+    const colors = [0xd6a1aa, 0x9cae91, 0xa79fc5, 0xd6b483];
+    box(.12, .26 + (i % 3) * .05, .18, colors[i % colors.length], -4.78, .22 + (i % 2) * .38, 5.9 + i * .22);
+  }
+  box(.58, .82, 2.2, 0xa97d68, 5.16, .41, 8.7, shelfWood);
+  box(.66, .09, 2.28, 0x7d5948, 4.82, .78, 8.7, shelfWood);
+  for (const z of [8.05, 8.65, 9.25]) {
+    const jar = new THREE.Mesh(new THREE.SphereGeometry(.14, 8, 6), new THREE.MeshStandardMaterial({ color: z === 8.65 ? 0xd5a4ad : 0xb2b9d0, roughness: .72 }));
+    jar.scale.set(.68, 1, .68); jar.position.set(4.76, 1.0, z); jar.castShadow = true; world.add(jar);
+  }
 }
 
 function createRobotBody() {
-  suctionLight = new THREE.PointLight(0xa8eee4, 0, 2.2);
-  suctionLight.position.set(0, -.08, -1.0); camera.add(suctionLight);
+  suctionLight = new THREE.PointLight(0xffdfc2, .9, 3.6, 1.5);
+  suctionLight.position.set(0, .02, -1.0); camera.add(suctionLight);
 }
 
 function hairTexture(kind, cat) {
@@ -305,13 +440,17 @@ function hairTexture(kind, cat) {
     g.lineCap = "round";
     g.lineJoin = "round";
     if (kind === "long") {
-      for (let i = 0; i < 13; i += 1) {
-        const y = 20 + (i % 7) * 3.4;
+      g.fillStyle = cat === "kotaro" ? "rgba(156,154,149,.18)" : "rgba(224,204,184,.22)";
+      g.beginPath(); g.ellipse(48, 35, 27, 9, 0, 0, Math.PI * 2); g.fill();
+      for (let i = 0; i < 16; i += 1) {
+        const y = 25 + (i % 6) * 3;
+        const startX = 17 + (i * 11) % 23;
+        const endX = 55 + (i * 17) % 23;
         g.strokeStyle = i % 4 === 0 ? shade : pale;
-        g.lineWidth = i % 3 === 0 ? 3 : 2;
+        g.lineWidth = i % 3 === 0 ? 2.6 : 1.8;
         g.beginPath();
-        g.moveTo(5 + (i % 3) * 3, y);
-        g.bezierCurveTo(28, y - 13 + (i % 4) * 5, 59, y + 16 - (i % 5) * 4, 91 - (i % 4) * 3, y - 3);
+        g.moveTo(startX, y + (i % 3) * 2);
+        g.bezierCurveTo(28 + (i % 5) * 5, 12 + (i % 4) * 6, 66 - (i % 4) * 5, 54 - (i % 5) * 5, endX, y - 2);
         g.stroke();
       }
       return;
@@ -334,28 +473,93 @@ function hairTexture(kind, cat) {
   });
 }
 
+function addHairObject(hair) {
+  const kind = hair.dropped ? "tuft" : hair.id % 7 === 0 ? "giant" : hair.id % 6 === 1 || hair.id % 6 === 4 ? "long" : "tuft";
+  if ((kind === "giant" || kind === "long") && giantHairTexture) {
+    const material = new THREE.SpriteMaterial({ map: giantHairTexture, color: hair.cat === "kotaro" ? 0xd9d5cd : 0xfff2e4, transparent: true, depthWrite: false, alphaTest: .05, toneMapped: false });
+    const sprite = new THREE.Sprite(material);
+    const standout = kind === "giant" && hair.id % 14 === 0;
+    const width = kind === "giant" ? (standout ? .62 : .5) : .46;
+    sprite.scale.set(hair.id % 2 ? -width : width, kind === "giant" ? (standout ? .44 : .35) : .22, 1); sprite.center.set(.5, .12); sprite.position.set(hair.x, .028, hair.z);
+    sprite.material.rotation = ((hair.id * 47) % 11 - 5) * .035;
+    sprite.userData.kind = kind;
+    world.add(sprite); hairObjects.set(hair.id, sprite);
+    return sprite;
+  }
+  if (kind === "long") {
+    const group = new THREE.Group();
+    const count = kind === "giant" ? 22 : 12;
+    const pale = new THREE.MeshStandardMaterial({ color: hair.cat === "kotaro" ? 0xe2ded4 : 0xf1e3d3, roughness: 1 });
+    const shade = new THREE.MeshStandardMaterial({ color: hair.cat === "kotaro" ? 0x8b8983 : 0xaa8f7e, roughness: 1 });
+    for (let i = 0; i < count; i += 1) {
+      const angle = kind === "giant" ? i / count * Math.PI * 2 : (i % 4 - 1.5) * .18;
+      const length = kind === "giant" ? .18 + (i % 6) * .026 : .34 + (i % 5) * .035;
+      const startX = kind === "giant" ? Math.cos(angle) * .025 : -.2 + (i % 5) * .025;
+      const startZ = kind === "giant" ? Math.sin(angle) * .025 : (i % 4 - 1.5) * .018;
+      const points = [];
+      for (let p = 0; p < 5; p += 1) {
+        const t = p / 4;
+        const wave = Math.sin(t * Math.PI * 2 + i * 1.7) * (kind === "giant" ? .045 : .032);
+        points.push(new THREE.Vector3(
+          startX + Math.cos(angle) * length * t + Math.sin(angle) * wave,
+          .018 + Math.sin(t * Math.PI + i) * .012,
+          startZ + Math.sin(angle) * length * t - Math.cos(angle) * wave,
+        ));
+      }
+      const strand = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 8, i % 4 === 0 ? .011 : .007, 3, false), i % 5 === 0 ? shade : pale);
+      strand.castShadow = true; group.add(strand);
+    }
+    if (kind === "giant") {
+      const core = new THREE.Mesh(new THREE.SphereGeometry(.13, 9, 6), pale);
+      core.scale.set(1.35, .28, 1); core.position.y = .025; core.castShadow = true; group.add(core);
+    }
+    group.position.set(hair.x, .012, hair.z);
+    group.rotation.y = ((hair.id * 47) % 11 - 5) * .11;
+    group.userData.kind = kind; group.userData.isStrandGroup = true;
+    world.add(group); hairObjects.set(hair.id, group);
+    return group;
+  }
+  const cacheKey = `${kind}-${hair.cat}`;
+  if (!hairTextureCache.has(cacheKey)) hairTextureCache.set(cacheKey, hairTexture(kind, hair.cat));
+  const material = new THREE.SpriteMaterial({ map: hairTextureCache.get(cacheKey), transparent: true, depthWrite: false, alphaTest: .06, toneMapped: false });
+  material.rotation = ((hair.id * 47) % 11 - 5) * .035;
+  const sprite = new THREE.Sprite(material);
+  const scale = kind === "giant" ? [.68, .43] : kind === "long" ? [.66, .28] : hair.dropped ? [.46, .30] : [.38, .25];
+  sprite.scale.set(scale[0], scale[1], 1); sprite.center.set(.5, .12); sprite.position.set(hair.x, .028, hair.z);
+  sprite.userData.kind = kind;
+  world.add(sprite); hairObjects.set(hair.id, sprite);
+  return sprite;
+}
+
 async function buildGameObjects() {
   const loader = new THREE.TextureLoader();
-  const master = await loader.loadAsync("./public/assets/characters-master.png");
+  const [master, giantTexture] = await Promise.all([
+    loader.loadAsync("./public/assets/characters-master-v3.png"),
+    loader.loadAsync("./public/assets/hair-fluff-cropped-v3.png"),
+  ]);
   master.colorSpace = THREE.SRGBColorSpace;
   master.magFilter = THREE.NearestFilter;
-  master.minFilter = THREE.NearestFilter;
+  master.minFilter = THREE.NearestMipmapNearestFilter;
+  giantTexture.colorSpace = THREE.SRGBColorSpace;
+  giantTexture.magFilter = THREE.LinearFilter;
+  giantTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  giantHairTexture = giantTexture;
   const specs = {
-    kotaro: { sx: 245, sy: 205, sw: 350, sh: 460, height: 1.3 },
-    yuragi: { sx: 680, sy: 185, sw: 455, sh: 500, height: 1.48 },
-    baby: { sx: 1200, sy: 285, sw: 370, sh: 370, height: 1.28 },
+    kotaro: { sx: 52, sy: 205, sw: 470, sh: 635, height: 1.82 },
+    yuragi: { sx: 500, sy: 190, sw: 600, sh: 660, height: 2.04 },
+    baby: { sx: 1040, sy: 270, sw: 480, sh: 600, height: 1.86 },
   };
   for (const entity of Object.values(CHARACTER_TEMPLATES)) {
     const spec = specs[entity.type];
     const map = master.clone();
-    map.repeat.set(spec.sw / 1774, spec.sh / 887);
-    map.offset.set(spec.sx / 1774, 1 - (spec.sy + spec.sh) / 887);
+    map.repeat.set(spec.sw / master.image.width, spec.sh / master.image.height);
+    map.offset.set(spec.sx / master.image.width, 1 - (spec.sy + spec.sh) / master.image.height);
     map.needsUpdate = true;
     const material = new THREE.SpriteMaterial({ map, transparent: true, alphaTest: .2, depthWrite: true, color: 0xfff8f2, toneMapped: false });
     const sprite = new THREE.Sprite(material);
     sprite.scale.set(spec.height * spec.sw / spec.sh, spec.height, 1);
     sprite.center.set(.5, 0);
-    sprite.position.set(entity.x, .03, entity.z);
+    sprite.position.set(entity.x, -.09, entity.z);
     world.add(sprite);
     characterObjects.set(entity.id, sprite);
 
@@ -364,14 +568,7 @@ async function buildGameObjects() {
   }
 
   for (const hair of state.hairs) {
-    const kind = hair.id % 6 === 1 || hair.id % 6 === 4 ? "long" : hair.grams >= .85 || hair.id % 7 === 0 ? "giant" : "tuft";
-    const material = new THREE.SpriteMaterial({ map: hairTexture(kind, hair.cat), transparent: true, depthWrite: false, alphaTest: .06, toneMapped: false });
-    material.rotation = ((hair.id * 47) % 11 - 5) * .035;
-    const sprite = new THREE.Sprite(material);
-    const scale = kind === "giant" ? [.68, .43] : kind === "long" ? [.82, .25] : [.38, .25];
-    sprite.scale.set(scale[0], scale[1], 1); sprite.center.set(.5, .12); sprite.position.set(hair.x, .028, hair.z);
-    sprite.userData.kind = kind;
-    world.add(sprite); hairObjects.set(hair.id, sprite);
+    addHairObject(hair);
   }
   for (const item of vomits) {
     const mesh = new THREE.Mesh(new THREE.CircleGeometry(item.radius, 12), new THREE.MeshStandardMaterial({ color: 0x777044, roughness: .92, polygonOffset: true, polygonOffsetFactor: -2 }));
@@ -387,6 +584,30 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 
+function setFurnitureBlend(roots, facade, blend) {
+  if (facade) {
+    facade.visible = blend > .01;
+    facade.material.opacity = blend;
+  }
+  for (const root of roots) {
+    root.visible = blend < .995;
+    root.traverse((object) => {
+      if (!object.material) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        if (material.userData.furnitureBaseOpacity === undefined) {
+          material.userData.furnitureBaseOpacity = material.opacity;
+          material.userData.furnitureBaseTransparent = material.transparent;
+          material.userData.furnitureBaseDepthWrite = material.depthWrite;
+        }
+        material.opacity = material.userData.furnitureBaseOpacity * (1 - blend);
+        material.transparent = material.userData.furnitureBaseTransparent || blend > .01;
+        material.depthWrite = material.userData.furnitureBaseDepthWrite && blend < .5;
+      }
+    });
+  }
+}
+
 function syncScene(now, dt) {
   const follow = 1 - Math.exp(-dt * 9);
   visual.x += (state.player.x - visual.x) * follow;
@@ -394,18 +615,26 @@ function syncScene(now, dt) {
   visual.angle = normalizedAngle(visual.angle + normalizedAngle(state.player.angle - visual.angle) * follow);
   const under = isInsideRect(state.player, sofa);
   const underTable = isInsideRect(state.player, tableArea);
-  if (sofaUnderside) sofaUnderside.visible = under;
-  if (tableUnderside) tableUnderside.visible = underTable;
+  const sofaDistance = Math.hypot(sofa.x - state.player.x, sofa.z - state.player.z);
+  const tableDistance = Math.hypot(tableArea.x - state.player.x, tableArea.z - state.player.z);
+  const sofaFacing = Math.abs(normalizedAngle(Math.atan2(sofa.x - state.player.x, sofa.z - state.player.z) - visual.angle));
+  const tableFacing = Math.abs(normalizedAngle(Math.atan2(tableArea.x - state.player.x, tableArea.z - state.player.z) - visual.angle));
+  const sofaBlend = !under && state.player.z < sofa.z - .45 && sofaDistance > 5.55 && sofaFacing < .68 ? 1 : 0;
+  const tableBlend = !underTable && state.player.z < tableArea.z - .45 && tableDistance > 5.55 && tableFacing < .68 ? 1 : 0;
+  setFurnitureBlend(furnitureMeshes.sofa, furnitureFacades.sofa, sofaBlend);
+  setFurnitureBlend(furnitureMeshes.table, furnitureFacades.table, tableBlend);
   camera.position.set(visual.x, under ? .225 : .265, visual.z);
-  camera.lookAt(visual.x + Math.sin(visual.angle), camera.position.y - .025, visual.z + Math.cos(visual.angle));
-  camera.fov = 71 + Math.sin(now * .006) * .15;
+  const viewDrop = under ? .3 : underTable ? .12 : .025;
+  visual.pitch += (viewDrop - visual.pitch) * follow;
+  camera.lookAt(visual.x + Math.sin(visual.angle), camera.position.y - visual.pitch, visual.z + Math.cos(visual.angle));
+  camera.fov = 78 + Math.sin(now * .006) * .15;
   camera.updateProjectionMatrix();
   for (const sprite of characterObjects.values()) sprite.visible = false;
   for (const shadow of characterShadows.values()) shadow.visible = false;
   for (const entity of state.wanderers) {
     const sprite = characterObjects.get(entity.id);
     if (!sprite) continue;
-    sprite.position.set(entity.x, .025 + Math.sin(now * .006 + entity.seed) * .01, entity.z);
+    sprite.position.set(entity.x, -.09, entity.z);
     const distance = Math.hypot(entity.x - state.player.x, entity.z - state.player.z);
     sprite.visible = distance > .55;
     const specWidth = sprite.userData.baseWidth || sprite.scale.x;
@@ -413,12 +642,13 @@ function syncScene(now, dt) {
     sprite.userData.baseWidth = specWidth;
     sprite.userData.baseHeight = specHeight;
     const nearScale = Math.min(1, Math.max(.25, distance / 2.6));
+    const scratching = now < entity.scratchingUntil;
     const travelView = normalizedAngle(entity.angle - Math.atan2(state.player.x - entity.x, state.player.z - entity.z));
     const side = Math.sin(travelView);
     sprite.scale.x = Math.sign(side || 1) * specWidth * nearScale * (.76 + Math.abs(Math.cos(travelView)) * .24);
-    sprite.scale.y = specHeight * nearScale;
+    sprite.scale.y = specHeight * nearScale * (scratching ? .94 + Math.sin(now * .035) * .035 : 1);
     sprite.material.color.set(Math.cos(travelView) < -.2 ? 0xe7ddd8 : 0xfff8f2);
-    sprite.material.rotation = Math.sin(now * .007 + entity.seed) * (entity.type === "baby" ? .035 : .018);
+    sprite.material.rotation = scratching ? Math.sin(now * .035) * .11 : Math.sin(now * .007 + entity.seed) * (entity.type === "baby" ? .035 : .018);
     const shadow = characterShadows.get(entity.id);
     if (shadow) { shadow.position.set(entity.x, .012, entity.z); shadow.visible = sprite.visible; }
   }
@@ -426,14 +656,17 @@ function syncScene(now, dt) {
     const object = hairObjects.get(hair.id);
     if (!object) continue;
     const lift = object.userData.kind === "long" ? .004 : .009;
-    object.position.set(hair.x, .028 + Math.sin(now * .007 + hair.id * 1.7) * lift, hair.z);
-    object.material.rotation += Math.sin(now * .0013 + hair.id) * .00018;
+    object.position.set(hair.x, (object.userData.isStrandGroup ? .012 : .028) + Math.sin(now * .007 + hair.id * 1.7) * lift, hair.z);
+    if (object.userData.isStrandGroup) object.rotation.y += Math.sin(now * .0013 + hair.id) * .00008;
+    else object.material.rotation += Math.sin(now * .0013 + hair.id) * .00018;
   }
   if (robotRing) robotRing.material.color.set(input.suction ? 0xa8eee4 : 0x8e87a6);
-  if (suctionLight) suctionLight.intensity = input.suction ? 2.2 : 0;
+  if (suctionLight) suctionLight.intensity = input.suction ? 2.2 : .62;
   canvas.dataset.view = "continuous-3d";
+  canvas.dataset.world = "true-geometry";
   canvas.dataset.angle = visual.angle.toFixed(3);
   canvas.dataset.roster = state.wanderers.map((entity) => entity.id).join(",");
+  canvas.dataset.droppedHairs = state.hairs.filter((hair) => hair.dropped).length.toString();
   canvas.dataset.position = `${state.player.x.toFixed(2)},${state.player.z.toFixed(2)}`;
   canvas.dataset.under = under ? "sofa" : underTable ? "table" : "room";
   canvas.setAttribute("aria-label", `床すれすれの掃除機視点のゲーム画面。現在地: ${under ? "ソファの下" : underTable ? "机の下" : "部屋"}`);
@@ -443,22 +676,48 @@ function update(dt, now) {
   if (state.mode !== "playing") return;
   state.remaining = Math.max(0, state.remaining - dt);
   if (state.remaining <= 0) return finish(false);
-  let turn = input.x;
-  let forward = -input.y;
-  turn += keyboardTurn(keys);
-  if (keys.has("ArrowUp") || keys.has("w")) forward += 1;
-  if (keys.has("ArrowDown") || keys.has("s")) forward -= 1;
-  state.player.angle = normalizedAngle(state.player.angle + turn * dt * 1.75);
+  const stickPower = Math.min(1, Math.hypot(input.x, input.y));
+  let forward = 0;
+  if (stickPower > .08) {
+    const desiredAngle = joystickHeading(input.anchorAngle, input.x, input.y);
+    const angleDelta = normalizedAngle(desiredAngle - state.player.angle);
+    state.player.angle = turnToward(state.player.angle, desiredAngle, dt * 3.15);
+    forward = stickPower * Math.max(.34, 1 - Math.abs(angleDelta) / Math.PI);
+  } else {
+    const turn = keyboardTurn(keys);
+    state.player.angle = normalizedAngle(state.player.angle + turn * dt * 1.45);
+    if (keys.has("ArrowUp") || keys.has("w")) forward += 1;
+    if (keys.has("ArrowDown") || keys.has("s")) forward -= 1;
+  }
   const move = forward * dt * 2.05;
   const next = { x: state.player.x + Math.sin(state.player.angle) * move, z: state.player.z + Math.cos(state.player.angle) * move };
   const resolved = resolveMovement(state.player, next, solids, state.player.radius);
   if (resolved.hit && now - state.lastCollisionAt > 450) { state.lastCollisionAt = now; showMessage("こつん"); }
   state.player.x = resolved.x; state.player.z = resolved.z;
   for (const entity of state.wanderers) {
-    stepWanderer(entity, dt, now);
+    if (entity.type !== "baby" && now >= entity.scratchAt && now >= entity.scratchingUntil) {
+      entity.scratchingUntil = now + 1150;
+      entity.scratchAt = now + 7600 + entity.seed * 310;
+      entity.scratchDropped = false;
+    }
+    if (now < entity.scratchingUntil) {
+      if (!entity.scratchDropped) {
+        entity.scratchDropped = true;
+        const dropped = createDroppedHair(entity, Math.max(...state.hairs.map((hair) => hair.id)) + 1);
+        state.hairs.push(dropped);
+        addHairObject(dropped);
+        showMessage(`${entity.type === "kotaro" ? "虎太郎" : "ゆらぎ"} かいかい…`);
+      }
+    } else {
+      stepWanderer(entity, dt, now);
+    }
     if (circlesOverlap(state.player, state.player.radius, entity, entity.radius)) {
-      state.player.x -= Math.sin(state.player.angle) * dt * 2.7;
-      state.player.z -= Math.cos(state.player.angle) * dt * 2.7;
+      const dx = state.player.x - entity.x;
+      const dz = state.player.z - entity.z;
+      const distance = Math.hypot(dx, dz) || 1;
+      const separation = state.player.radius + entity.radius + .03;
+      state.player.x = entity.x + dx / distance * separation;
+      state.player.z = entity.z + dz / distance * separation;
       if (now - state.lastCollisionAt > 700) {
         state.lastCollisionAt = now;
         showMessage(entity.type === "baby" ? "あぶない、あぶない" : `${entity.type === "kotaro" ? "虎太郎" : "ゆらぎ"}、通ります`);
@@ -479,11 +738,17 @@ function update(dt, now) {
 
 function startGame() {
   state = makeState();
-  input.x = 0; input.y = 0; input.suction = false;
-  visual.x = state.player.x; visual.z = state.player.z; visual.angle = state.player.angle;
+  input.x = 0; input.y = 0; input.suction = false; input.anchorAngle = state.player.angle;
+  visual.x = state.player.x; visual.z = state.player.z; visual.angle = state.player.angle; visual.pitch = .025;
+  for (const [id, object] of hairObjects) {
+    if (id >= state.hairs.length) {
+      world.remove(object); object.material.dispose(); hairObjects.delete(id);
+    }
+  }
   for (const hair of state.hairs) { const object = hairObjects.get(hair.id); if (object) object.visible = true; }
   state.mode = "playing";
   ui.intro.hidden = true; ui.result.hidden = true; ui.controls.hidden = false;
+  ui.robot.hidden = false;
   ui.grams.textContent = "0.0"; ui.time.textContent = "60";
   ensureAudio();
 }
@@ -491,7 +756,7 @@ function startGame() {
 function finish(hitHazard) {
   if (state.mode !== "playing") return;
   state.mode = "result"; input.suction = false;
-  ui.controls.hidden = true; ui.result.hidden = false;
+  ui.controls.hidden = true; ui.robot.hidden = true; ui.result.hidden = false;
   ui.resultGrams.textContent = state.grams.toFixed(1);
   ui.kotaroCount.textContent = `${state.counts.kotaro} ふわ`; ui.yuragiCount.textContent = `${state.counts.yuragi} ふわ`;
   ui.resultKicker.textContent = hitHazard ? "OOPS" : "CLEANUP COMPLETE";
@@ -531,7 +796,7 @@ function joystickEnd(event) {
   input.joystickPointer = null; input.x = input.y = 0; ui.stick.style.transform = "translate(0, 0)";
 }
 
-ui.joystick.addEventListener("pointerdown", (event) => { input.joystickPointer = event.pointerId; ui.joystick.setPointerCapture(event.pointerId); joystickMove(event); });
+ui.joystick.addEventListener("pointerdown", (event) => { input.joystickPointer = event.pointerId; input.anchorAngle = state.player.angle; ui.joystick.setPointerCapture(event.pointerId); joystickMove(event); });
 ui.joystick.addEventListener("pointermove", joystickMove);
 ui.joystick.addEventListener("pointerup", joystickEnd);
 ui.joystick.addEventListener("pointercancel", joystickEnd);
@@ -548,16 +813,21 @@ function frame(now) {
 
 async function init() {
   ui.start.disabled = true;
-  buildRoom(); createRobotBody(); await Promise.all([buildEnvironment(), buildGameObjects()]); resize(); syncScene(performance.now(), 1 / 60);
+  buildRoom(); createRobotBody(); await Promise.all([buildBackWallArt(), buildSideWallArt(), buildSofaFacade(), buildGameObjects()]); resize(); syncScene(performance.now(), 1 / 60);
   ui.start.disabled = false; ui.controls.hidden = true; requestAnimationFrame(frame);
   const params = new URLSearchParams(location.search);
   if (params.has("autostart")) {
     startGame();
-    if (params.get("zone") === "sofa") { state.player.x = -3.15; state.player.z = 4.9; }
-    if (params.get("zone") === "table") { state.player.x = 2.7; state.player.z = 5.55; }
+    if (params.get("zone") === "sofa") { state.player.x = 3.15; state.player.z = 4.55; }
+    if (params.get("zone") === "table") { state.player.x = -2.7; state.player.z = 5.45; }
     visual.x = state.player.x; visual.z = state.player.z;
-    if (params.has("spin")) input.x = .62;
-    if (params.has("drive")) input.y = -.72;
+    if (params.has("spin")) keys.add("ArrowLeft");
+    if (params.has("drive")) { input.y = -.72; input.anchorAngle = state.player.angle; }
+    if (params.get("steer") === "right") { input.x = .72; input.y = -.72; input.anchorAngle = state.player.angle; }
+    if (params.has("scratch")) {
+      const cat = state.wanderers.find((entity) => entity.type !== "baby");
+      if (cat) cat.scratchAt = 0;
+    }
   }
 }
 
