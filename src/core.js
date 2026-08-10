@@ -18,6 +18,13 @@ export function normalizedAngle(angle) {
   return angle;
 }
 
+export function keyboardTurn(keys) {
+  let turn = 0;
+  if (keys.has("ArrowLeft") || keys.has("a")) turn += 1;
+  if (keys.has("ArrowRight") || keys.has("d")) turn -= 1;
+  return turn;
+}
+
 export function isInsideRect(point, rect, padding = 0) {
   return point.x > rect.x - rect.w / 2 - padding && point.x < rect.x + rect.w / 2 + padding &&
     point.z > rect.z - rect.d / 2 - padding && point.z < rect.z + rect.d / 2 + padding;
@@ -51,6 +58,20 @@ export function collectNearbyHair(player, hairs, suction) {
   let yuragi = 0;
   for (const hair of hairs) {
     if (!canVacuum(player, hair, suction)) continue;
+    hair.collected = true;
+    grams += hair.grams;
+    if (hair.cat === "kotaro") kotaro += 1;
+    else yuragi += 1;
+  }
+  return { grams, kotaro, yuragi };
+}
+
+export function collectTouchedHair(player, hairs, maxDistance = .55) {
+  let grams = 0;
+  let kotaro = 0;
+  let yuragi = 0;
+  for (const hair of hairs) {
+    if (hair.collected || distance(player, hair) > maxDistance) continue;
     hair.collected = true;
     grams += hair.grams;
     if (hair.cat === "kotaro") kotaro += 1;

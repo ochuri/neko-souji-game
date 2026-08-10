@@ -12,19 +12,19 @@
       "name": "gameplay logic tests",
       "category": "test",
       "status": "pass",
-      "evidence": "npm test passed 6/6 cases covering suction direction, grams, furniture collision, vomit failure, moving obstacles, and continuous camera angle wrapping"
+      "evidence": "npm test passed 8/8 cases covering automatic drive-over collection, keyboard turn direction, grams, furniture collision, vomit failure, moving obstacles, and continuous camera angle wrapping"
     },
     {
       "name": "mobile WebGL rendering and continuous camera",
       "category": "visual",
       "status": "pass",
-      "evidence": "Independent QA passed with P0/P1 none at 390x844; docs/qa/mobile-center.png and mobile-spin-a/b.png show a seamless continuous-3d rotation with no atlas seams, duplicate furniture, layout breakage, console errors, or warnings"
+      "evidence": "Independent QA passed with P0/P1 none at 390x844; current normal, sofa-under, and table-under captures show continuous-3d rendering, three distinct rich hair silhouettes, successful furniture-under traversal, no duplicate foreground furniture, and no console errors or warnings"
     },
     {
       "name": "mobile controls and semantic labels",
       "category": "accessibility",
       "status": "pass",
-      "evidence": "390x844-equivalent UI uses large touch targets, Japanese aria-labels, live score/status regions, visible text labels, and keyboard WASD/arrow/space alternatives"
+      "evidence": "390x844-equivalent UI uses a large movement target, Japanese aria-labels, live score/status regions, visible text labels, automatic suction without a second control, and keyboard WASD/arrow alternatives"
     },
     {
       "name": "static privacy and dependency audit",

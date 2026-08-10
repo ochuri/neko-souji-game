@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canVacuum, collectNearbyHair, hitVomit, normalizedAngle, resolveMovement, stepWanderer } from "../src/core.js";
+import { canVacuum, collectNearbyHair, collectTouchedHair, hitVomit, keyboardTurn, normalizedAngle, resolveMovement, stepWanderer } from "../src/core.js";
 
 test("vacuum only collects hair in front while suction is active", () => {
   const player = { x: 0, z: 0, angle: 0 };
@@ -16,6 +16,16 @@ test("collection returns exact grams and breed counts", () => {
   ];
   assert.deepEqual(collectNearbyHair({ x: 0, z: 0, angle: 0 }, hairs, true), { grams: 1.6, kotaro: 1, yuragi: 1 });
   assert.equal(hairs.every((hair) => hair.collected), true);
+});
+
+test("robot automatically collects hair it drives over", () => {
+  const hairs = [
+    { x: .3, z: .2, grams: .7, cat: "kotaro", collected: false },
+    { x: 1.2, z: 0, grams: .9, cat: "yuragi", collected: false },
+  ];
+  assert.deepEqual(collectTouchedHair({ x: 0, z: 0 }, hairs), { grams: .7, kotaro: 1, yuragi: 0 });
+  assert.equal(hairs[0].collected, true);
+  assert.equal(hairs[1].collected, false);
 });
 
 test("furniture collision blocks movement", () => {
@@ -39,4 +49,11 @@ test("moving obstacle remains within the room", () => {
 test("camera heading stays continuous across full rotations", () => {
   assert.ok(Math.abs(normalizedAngle(Math.PI * 2 + .2) - .2) < 1e-9);
   assert.ok(Math.abs(normalizedAngle(-Math.PI * 2 - .2) + .2) < 1e-9);
+});
+
+test("keyboard left and right turn in the expected directions", () => {
+  assert.equal(keyboardTurn(new Set(["ArrowLeft"])), 1);
+  assert.equal(keyboardTurn(new Set(["ArrowRight"])), -1);
+  assert.equal(keyboardTurn(new Set(["a"])), 1);
+  assert.equal(keyboardTurn(new Set(["d"])), -1);
 });

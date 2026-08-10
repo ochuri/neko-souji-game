@@ -1,10 +1,11 @@
 import * as THREE from "../public/vendor/three.module.js";
 import {
   circlesOverlap,
-  collectNearbyHair,
+  collectTouchedHair,
   createInitialHair,
   hitVomit,
   isInsideRect,
+  keyboardTurn,
   normalizedAngle,
   resolveMovement,
   stepWanderer,
@@ -26,11 +27,19 @@ const ui = {
   controls: document.querySelector("#controls"),
   joystick: document.querySelector("#joystick"),
   stick: document.querySelector("#stick"),
-  vacuum: document.querySelector("#vacuum"),
   message: document.querySelector("#message"),
 };
 
+const CHARACTER_TEMPLATES = {
+  kotaro: { id: "kotaro", type: "kotaro", x: -1.35, z: 4.25, angle: .8, speed: .42, radius: .58, turnAt: 0, seed: 2 },
+  yuragi: { id: "yuragi", type: "yuragi", x: .55, z: 6.15, angle: -1.4, speed: .28, radius: .68, turnAt: 0, seed: 7 },
+  baby: { id: "baby", type: "baby", x: 1.05, z: 3.95, angle: 2.1, speed: .34, radius: .62, turnAt: 0, seed: 11 },
+};
+const ROSTERS = [["kotaro", "baby"], ["yuragi", "baby"], ["kotaro", "yuragi"]];
+let rosterTurn = 0;
+
 const sofa = { id: "sofa", x: -3.15, z: 6.65, w: 4.35, d: 2.55, clearance: .34 };
+const tableArea = { id: "table", x: 2.7, z: 7.55, w: 4.1, d: 2.65 };
 const solids = [];
 for (const [id, x, z] of [
   ["sofa-leg-1", -4.82, 5.7], ["sofa-leg-2", -1.48, 5.7], ["sofa-leg-3", -4.82, 7.6], ["sofa-leg-4", -1.48, 7.6],
@@ -74,6 +83,8 @@ let messageTimer = 0;
 let audio = null;
 let robotRing = null;
 let suctionLight = null;
+let sofaUnderside = null;
+let tableUnderside = null;
 
 function makeState() {
   return {
@@ -84,11 +95,7 @@ function makeState() {
     counts: { kotaro: 0, yuragi: 0 },
     remaining: 60,
     lastCollisionAt: 0,
-    wanderers: [
-      { id: "kotaro", type: "kotaro", x: -1.35, z: 4.25, angle: .8, speed: .42, radius: .48, turnAt: 0, seed: 2 },
-      { id: "yuragi", type: "yuragi", x: .55, z: 6.15, angle: -1.4, speed: .28, radius: .58, turnAt: 0, seed: 7 },
-      { id: "baby", type: "baby", x: 1.05, z: 3.95, angle: 2.1, speed: .34, radius: .52, turnAt: 0, seed: 11 },
-    ],
+    wanderers: ROSTERS[rosterTurn++ % ROSTERS.length].map((id) => ({ ...CHARACTER_TEMPLATES[id] })),
   };
 }
 
@@ -164,6 +171,8 @@ function buildRoom() {
   scene.add(sun);
   const fill = new THREE.PointLight(0xc9b6ff, .55, 9);
   fill.position.set(-4, 1.5, 5); scene.add(fill);
+  buildSofa();
+  buildTable();
 }
 
 function buildCollisionGuides() {
@@ -193,7 +202,13 @@ async function buildEnvironment() {
   const g = atlas.getContext("2d");
   const sequence = [0, 1, 2, 0, 1, 2];
   const panelWidth = atlas.width / sequence.length;
-  sequence.forEach((textureIndex, index) => g.drawImage(textures[textureIndex].image, index * panelWidth, 0, panelWidth + 1, atlas.height));
+  sequence.forEach((textureIndex, index) => {
+    g.save();
+    g.translate((index + 1) * panelWidth, 0);
+    g.scale(-1, 1);
+    g.drawImage(textures[textureIndex].image, 0, 0, panelWidth + 1, atlas.height);
+    g.restore();
+  });
   const panorama = new THREE.CanvasTexture(atlas);
   panorama.colorSpace = THREE.SRGBColorSpace;
   panorama.magFilter = THREE.NearestFilter;
@@ -208,19 +223,13 @@ async function buildEnvironment() {
 }
 
 function buildSofa() {
-  const lavender = 0x9f91ae;
   const fabric = pixelTexture(64, 64, (g, w, h) => {
-    g.fillStyle = "#9f91ae"; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 180; i += 1) { g.fillStyle = i % 3 ? "rgba(255,244,249,.09)" : "rgba(70,55,80,.1)"; g.fillRect((i * 17) % w, (i * 31) % h, 1, 2); }
+    g.fillStyle = "#67596e"; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 180; i += 1) { g.fillStyle = i % 3 ? "rgba(255,244,249,.07)" : "rgba(35,26,41,.12)"; g.fillRect((i * 17) % w, (i * 31) % h, 1, 2); }
   }, 3, 2);
-  box(4.35, .72, 2.35, lavender, -3.15, .71, 6.65, fabric);
-  box(4.35, 1.12, .35, 0x9384a4, -3.15, 1.24, 7.66, fabric);
-  box(.32, .36, .32, 0x5b4748, -4.82, .18, 5.7); box(.32, .36, .32, 0x5b4748, -1.48, .18, 5.7);
-  box(.32, .36, .32, 0x5b4748, -4.82, .18, 7.6); box(.32, .36, .32, 0x5b4748, -1.48, .18, 7.6);
-  box(1.85, .18, 1.88, 0xb3a6be, -4.2, 1.12, 6.57); box(1.85, .18, 1.88, 0xaa9db8, -2.1, 1.12, 6.57);
-  const pillow = box(.82, .58, .18, 0xd09ca1, -4.25, 1.42, 7.4); pillow.rotation.z = -.15;
-  box(.68, .62, .045, 0xd9a4a7, -3.45, .79, 5.46);
-  for (let i = 0; i < 6; i += 1) box(.045, .12 + (i % 2) * .03, .045, 0xc88791, -3.72 + i * .11, .42, 5.44);
+  const underside = new THREE.Mesh(new THREE.PlaneGeometry(4.35, 2.35), new THREE.MeshStandardMaterial({ map: fabric, roughness: 1, side: THREE.FrontSide }));
+  underside.rotation.x = Math.PI / 2; underside.position.set(-3.15, .35, 6.65); underside.receiveShadow = true; world.add(underside);
+  sofaUnderside = underside;
 }
 
 function buildTable() {
@@ -229,10 +238,9 @@ function buildTable() {
     for (let y = 5; y < h; y += 11) { g.fillStyle = "rgba(244,188,132,.15)"; g.fillRect(0, y, w, 2); }
     for (let i = 0; i < 16; i += 1) { g.fillStyle = "rgba(67,39,36,.16)"; g.fillRect((i * 23) % w, (i * 37) % h, 13, 1); }
   }, 3, 2);
-  box(4.1, .18, 2.65, 0x825b48, 2.7, .94, 7.55, wood);
-  for (const [x, z] of [[.95,6.5],[4.45,6.5],[.95,8.6],[4.45,8.6]]) box(.26, .9, .26, 0x654535, x, .45, z, wood);
-  buildChair(3.5, 4.45, 0x8f7898);
-  buildChair(.75, 7.1, 0xa093ab, Math.PI);
+  const underside = new THREE.Mesh(new THREE.PlaneGeometry(4.1, 2.65), new THREE.MeshStandardMaterial({ map: wood, roughness: .92, side: THREE.FrontSide }));
+  underside.rotation.x = Math.PI / 2; underside.position.set(2.7, .85, 7.55); underside.receiveShadow = true; world.add(underside);
+  tableUnderside = underside;
 }
 
 function buildChair(x, z, color, rotation = 0) {
@@ -289,13 +297,40 @@ function createRobotBody() {
   suctionLight.position.set(0, -.08, -1.0); camera.add(suctionLight);
 }
 
-function tuftTexture() {
-  return pixelTexture(48, 48, (g) => {
-    g.clearRect(0, 0, 48, 48); g.strokeStyle = "rgba(244,234,222,.95)"; g.lineWidth = 2; g.lineCap = "round";
-    for (let i = 0; i < 15; i += 1) {
-      const a = i / 15 * Math.PI * 2; const r = 8 + i % 5;
-      g.beginPath(); g.moveTo(24, 27); g.quadraticCurveTo(24 + Math.cos(a + .6) * r, 18 + Math.sin(a) * 4, 24 + Math.cos(a) * (r + 7), 27 + Math.sin(a) * 8); g.stroke();
+function hairTexture(kind, cat) {
+  return pixelTexture(96, 64, (g) => {
+    g.clearRect(0, 0, 96, 64);
+    const pale = cat === "kotaro" ? "rgba(225,222,213,.98)" : "rgba(242,229,211,.98)";
+    const shade = cat === "kotaro" ? "rgba(105,104,101,.78)" : "rgba(139,116,101,.72)";
+    g.lineCap = "round";
+    g.lineJoin = "round";
+    if (kind === "long") {
+      for (let i = 0; i < 13; i += 1) {
+        const y = 20 + (i % 7) * 3.4;
+        g.strokeStyle = i % 4 === 0 ? shade : pale;
+        g.lineWidth = i % 3 === 0 ? 3 : 2;
+        g.beginPath();
+        g.moveTo(5 + (i % 3) * 3, y);
+        g.bezierCurveTo(28, y - 13 + (i % 4) * 5, 59, y + 16 - (i % 5) * 4, 91 - (i % 4) * 3, y - 3);
+        g.stroke();
+      }
+      return;
     }
+    const strands = kind === "giant" ? 34 : 20;
+    const cx = 48; const cy = 37;
+    for (let i = 0; i < strands; i += 1) {
+      const a = (i / strands) * Math.PI * 2;
+      const inner = 4 + (i % 4);
+      const outer = (kind === "giant" ? 25 : 17) + (i % 7);
+      g.strokeStyle = i % 5 === 0 ? shade : pale;
+      g.lineWidth = kind === "giant" && i % 4 === 0 ? 4 : 2.2;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner * .58);
+      g.quadraticCurveTo(cx + Math.cos(a + .52) * outer * .72, cy + Math.sin(a + .38) * outer * .42, cx + Math.cos(a) * outer, cy + Math.sin(a) * outer * .58);
+      g.stroke();
+    }
+    g.fillStyle = cat === "kotaro" ? "rgba(156,154,149,.28)" : "rgba(224,204,184,.34)";
+    g.beginPath(); g.ellipse(cx, cy, kind === "giant" ? 16 : 10, kind === "giant" ? 9 : 6, 0, 0, Math.PI * 2); g.fill();
   });
 }
 
@@ -306,11 +341,11 @@ async function buildGameObjects() {
   master.magFilter = THREE.NearestFilter;
   master.minFilter = THREE.NearestFilter;
   const specs = {
-    kotaro: { sx: 245, sy: 205, sw: 350, sh: 460, height: .84 },
-    yuragi: { sx: 680, sy: 185, sw: 455, sh: 500, height: .94 },
-    baby: { sx: 1200, sy: 285, sw: 370, sh: 370, height: .78 },
+    kotaro: { sx: 245, sy: 205, sw: 350, sh: 460, height: 1.3 },
+    yuragi: { sx: 680, sy: 185, sw: 455, sh: 500, height: 1.48 },
+    baby: { sx: 1200, sy: 285, sw: 370, sh: 370, height: 1.28 },
   };
-  for (const entity of state.wanderers) {
+  for (const entity of Object.values(CHARACTER_TEMPLATES)) {
     const spec = specs[entity.type];
     const map = master.clone();
     map.repeat.set(spec.sw / 1774, spec.sh / 887);
@@ -328,10 +363,14 @@ async function buildGameObjects() {
     shadow.rotation.x = -Math.PI / 2; shadow.scale.y = .42; shadow.position.set(entity.x, .012, entity.z); world.add(shadow); characterShadows.set(entity.id, shadow);
   }
 
-  const hairMaterial = new THREE.SpriteMaterial({ map: tuftTexture(), transparent: true, depthWrite: false, alphaTest: .05 });
   for (const hair of state.hairs) {
-    const sprite = new THREE.Sprite(hairMaterial.clone());
-    sprite.scale.set(.25, .17, 1); sprite.center.set(.5, .15); sprite.position.set(hair.x, .025, hair.z);
+    const kind = hair.id % 6 === 1 || hair.id % 6 === 4 ? "long" : hair.grams >= .85 || hair.id % 7 === 0 ? "giant" : "tuft";
+    const material = new THREE.SpriteMaterial({ map: hairTexture(kind, hair.cat), transparent: true, depthWrite: false, alphaTest: .06, toneMapped: false });
+    material.rotation = ((hair.id * 47) % 11 - 5) * .035;
+    const sprite = new THREE.Sprite(material);
+    const scale = kind === "giant" ? [.68, .43] : kind === "long" ? [.82, .25] : [.38, .25];
+    sprite.scale.set(scale[0], scale[1], 1); sprite.center.set(.5, .12); sprite.position.set(hair.x, .028, hair.z);
+    sprite.userData.kind = kind;
     world.add(sprite); hairObjects.set(hair.id, sprite);
   }
   for (const item of vomits) {
@@ -354,10 +393,15 @@ function syncScene(now, dt) {
   visual.z += (state.player.z - visual.z) * follow;
   visual.angle = normalizedAngle(visual.angle + normalizedAngle(state.player.angle - visual.angle) * follow);
   const under = isInsideRect(state.player, sofa);
+  const underTable = isInsideRect(state.player, tableArea);
+  if (sofaUnderside) sofaUnderside.visible = under;
+  if (tableUnderside) tableUnderside.visible = underTable;
   camera.position.set(visual.x, under ? .225 : .265, visual.z);
   camera.lookAt(visual.x + Math.sin(visual.angle), camera.position.y - .025, visual.z + Math.cos(visual.angle));
   camera.fov = 71 + Math.sin(now * .006) * .15;
   camera.updateProjectionMatrix();
+  for (const sprite of characterObjects.values()) sprite.visible = false;
+  for (const shadow of characterShadows.values()) shadow.visible = false;
   for (const entity of state.wanderers) {
     const sprite = characterObjects.get(entity.id);
     if (!sprite) continue;
@@ -365,19 +409,34 @@ function syncScene(now, dt) {
     const distance = Math.hypot(entity.x - state.player.x, entity.z - state.player.z);
     sprite.visible = distance > .55;
     const specWidth = sprite.userData.baseWidth || sprite.scale.x;
+    const specHeight = sprite.userData.baseHeight || sprite.scale.y;
     sprite.userData.baseWidth = specWidth;
+    sprite.userData.baseHeight = specHeight;
+    const nearScale = Math.min(1, Math.max(.25, distance / 2.6));
     const travelView = normalizedAngle(entity.angle - Math.atan2(state.player.x - entity.x, state.player.z - entity.z));
     const side = Math.sin(travelView);
-    sprite.scale.x = Math.sign(side || 1) * specWidth * (.76 + Math.abs(Math.cos(travelView)) * .24);
+    sprite.scale.x = Math.sign(side || 1) * specWidth * nearScale * (.76 + Math.abs(Math.cos(travelView)) * .24);
+    sprite.scale.y = specHeight * nearScale;
     sprite.material.color.set(Math.cos(travelView) < -.2 ? 0xe7ddd8 : 0xfff8f2);
     sprite.material.rotation = Math.sin(now * .007 + entity.seed) * (entity.type === "baby" ? .035 : .018);
     const shadow = characterShadows.get(entity.id);
     if (shadow) { shadow.position.set(entity.x, .012, entity.z); shadow.visible = sprite.visible; }
   }
-  for (const hair of state.hairs) hairObjects.get(hair.id)?.position.set(hair.x, .025 + Math.sin(now * .009 + hair.id) * .008, hair.z);
+  for (const hair of state.hairs) {
+    const object = hairObjects.get(hair.id);
+    if (!object) continue;
+    const lift = object.userData.kind === "long" ? .004 : .009;
+    object.position.set(hair.x, .028 + Math.sin(now * .007 + hair.id * 1.7) * lift, hair.z);
+    object.material.rotation += Math.sin(now * .0013 + hair.id) * .00018;
+  }
   if (robotRing) robotRing.material.color.set(input.suction ? 0xa8eee4 : 0x8e87a6);
   if (suctionLight) suctionLight.intensity = input.suction ? 2.2 : 0;
   canvas.dataset.view = "continuous-3d";
+  canvas.dataset.angle = visual.angle.toFixed(3);
+  canvas.dataset.roster = state.wanderers.map((entity) => entity.id).join(",");
+  canvas.dataset.position = `${state.player.x.toFixed(2)},${state.player.z.toFixed(2)}`;
+  canvas.dataset.under = under ? "sofa" : underTable ? "table" : "room";
+  canvas.setAttribute("aria-label", `床すれすれの掃除機視点のゲーム画面。現在地: ${under ? "ソファの下" : underTable ? "机の下" : "部屋"}`);
 }
 
 function update(dt, now) {
@@ -386,8 +445,7 @@ function update(dt, now) {
   if (state.remaining <= 0) return finish(false);
   let turn = input.x;
   let forward = -input.y;
-  if (keys.has("ArrowLeft") || keys.has("a")) turn -= 1;
-  if (keys.has("ArrowRight") || keys.has("d")) turn += 1;
+  turn += keyboardTurn(keys);
   if (keys.has("ArrowUp") || keys.has("w")) forward += 1;
   if (keys.has("ArrowDown") || keys.has("s")) forward -= 1;
   state.player.angle = normalizedAngle(state.player.angle + turn * dt * 1.75);
@@ -408,7 +466,7 @@ function update(dt, now) {
     }
   }
   if (hitVomit(state.player, vomits)) return finish(true);
-  const collected = collectNearbyHair(state.player, state.hairs, input.suction || keys.has(" "));
+  const collected = collectTouchedHair(state.player, state.hairs);
   if (collected.grams) {
     state.grams = Math.round((state.grams + collected.grams) * 10) / 10;
     state.counts.kotaro += collected.kotaro; state.counts.yuragi += collected.yuragi;
@@ -432,7 +490,7 @@ function startGame() {
 
 function finish(hitHazard) {
   if (state.mode !== "playing") return;
-  state.mode = "result"; input.suction = false; ui.vacuum.classList.remove("active");
+  state.mode = "result"; input.suction = false;
   ui.controls.hidden = true; ui.result.hidden = false;
   ui.resultGrams.textContent = state.grams.toFixed(1);
   ui.kotaroCount.textContent = `${state.counts.kotaro} ふわ`; ui.yuragiCount.textContent = `${state.counts.yuragi} ふわ`;
@@ -477,12 +535,7 @@ ui.joystick.addEventListener("pointerdown", (event) => { input.joystickPointer =
 ui.joystick.addEventListener("pointermove", joystickMove);
 ui.joystick.addEventListener("pointerup", joystickEnd);
 ui.joystick.addEventListener("pointercancel", joystickEnd);
-for (const eventName of ["pointerdown", "pointerenter"]) ui.vacuum.addEventListener(eventName, (event) => {
-  if (eventName === "pointerenter" && event.buttons !== 1) return;
-  input.suction = true; ui.vacuum.classList.add("active"); if (eventName === "pointerdown") ui.vacuum.setPointerCapture(event.pointerId);
-});
-for (const eventName of ["pointerup", "pointercancel", "pointerleave"]) ui.vacuum.addEventListener(eventName, () => { input.suction = false; ui.vacuum.classList.remove("active"); });
-window.addEventListener("keydown", (event) => { keys.add(event.key.length === 1 ? event.key.toLowerCase() : event.key); if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(event.key)) event.preventDefault(); });
+window.addEventListener("keydown", (event) => { keys.add(event.key.length === 1 ? event.key.toLowerCase() : event.key); if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(event.key)) event.preventDefault(); });
 window.addEventListener("keyup", (event) => keys.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key));
 window.addEventListener("resize", resize);
 ui.start.addEventListener("click", startGame);
@@ -500,6 +553,9 @@ async function init() {
   const params = new URLSearchParams(location.search);
   if (params.has("autostart")) {
     startGame();
+    if (params.get("zone") === "sofa") { state.player.x = -3.15; state.player.z = 4.9; }
+    if (params.get("zone") === "table") { state.player.x = 2.7; state.player.z = 5.55; }
+    visual.x = state.player.x; visual.z = state.player.z;
     if (params.has("spin")) input.x = .62;
     if (params.has("drive")) input.y = -.72;
   }

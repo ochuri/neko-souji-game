@@ -84,24 +84,6 @@ button { font: inherit; }
   background: rgba(255,248,239,.78);
   box-shadow: 0 5px 18px rgba(35,32,45,.24), inset 0 -3px 0 rgba(117,103,135,.2);
 }
-.vacuum-button {
-  position: absolute;
-  right: max(25px, env(safe-area-inset-right));
-  bottom: max(34px, calc(env(safe-area-inset-bottom) + 24px));
-  width: 94px;
-  height: 94px;
-  border: 1px solid rgba(255,255,255,.35);
-  border-radius: 50%;
-  color: var(--cream);
-  background: rgba(162, 143, 184, .5);
-  box-shadow: 0 9px 26px rgba(34,30,43,.3), inset 0 0 22px rgba(255,255,255,.15);
-  backdrop-filter: blur(4px);
-  pointer-events: auto;
-  -webkit-tap-highlight-color: transparent;
-}
-.vacuum-button span { display: block; font-size: 28px; font-weight: 900; transform: translateY(-1px); }
-.vacuum-button.active { transform: scale(.94); background: rgba(179, 159, 201, .78); box-shadow: 0 0 28px rgba(215,240,236,.55), inset 0 0 20px rgba(255,255,255,.25); }
-
 .panel {
   position: absolute;
   inset: 0;
