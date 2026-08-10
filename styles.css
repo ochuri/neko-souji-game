@@ -27,9 +27,9 @@ button { font: inherit; }
 .robot-foreground {
   position: absolute;
   z-index: 2;
-  left: 64%;
-  bottom: -2px;
-  width: min(56%, 282px);
+  left: 50%;
+  bottom: clamp(-82px, -18vw, -62px);
+  width: min(116%, 600px);
   height: auto;
   transform: translateX(-50%);
   pointer-events: none;
@@ -78,7 +78,7 @@ button { font: inherit; }
 .joystick {
   position: absolute;
   left: max(22px, env(safe-area-inset-left));
-  bottom: max(28px, calc(env(safe-area-inset-bottom) + 18px));
+  bottom: max(174px, calc(env(safe-area-inset-bottom) + 164px));
   width: 116px;
   height: 116px;
   border: 1px solid rgba(255,255,255,.28);

@@ -39,6 +39,23 @@ const CHARACTER_TEMPLATES = {
   yuragi: { id: "yuragi", type: "yuragi", x: -.15, z: 8.8, angle: -1.4, speed: .28, radius: .74, turnAt: 0, seed: 7 },
   baby: { id: "baby", type: "baby", x: -3.7, z: 8.2, angle: 2.1, speed: .34, radius: .68, turnAt: 0, seed: 11 },
 };
+const CHARACTER_ANIMATIONS = {
+  kotaro: {
+    walk: "./public/assets/animation/kotaro-walk-8-normalized.png",
+    stretch: "./public/assets/animation/kotaro-stretch-8-normalized.png",
+    scratch: "./public/assets/animation/kotaro-scratch-8-normalized.png",
+    yawn: "./public/assets/animation/kotaro-yawn-8-normalized.png",
+  },
+  yuragi: {
+    walk: "./public/assets/animation/yuragi-walk-8-normalized.png",
+    stretch: "./public/assets/animation/yuragi-stretch-8-normalized.png",
+    scratch: "./public/assets/animation/yuragi-scratch-8-normalized.png",
+    yawn: "./public/assets/animation/yuragi-yawn-8-normalized.png",
+  },
+  baby: {
+    crawl: "./public/assets/animation/baby-crawl-8-normalized.png",
+  },
+};
 const ROSTERS = [["kotaro", "baby"], ["yuragi", "baby"], ["kotaro", "yuragi"]];
 let rosterTurn = 0;
 
@@ -79,9 +96,9 @@ scene.add(camera);
 const world = new THREE.Group();
 scene.add(world);
 const hairObjects = new Map();
-const hairTextureCache = new Map();
 const characterObjects = new Map();
 const characterShadows = new Map();
+const characterAnimationTextures = new Map();
 const furnitureMeshes = { sofa: [], table: [] };
 const furnitureFacades = { sofa: null, table: null };
 const keys = new Set();
@@ -93,7 +110,7 @@ let messageTimer = 0;
 let audio = null;
 let robotRing = null;
 let suctionLight = null;
-let giantHairTexture = null;
+let hairAtlasTexture = null;
 
 function makeState() {
   return {
@@ -109,6 +126,10 @@ function makeState() {
       scratchAt: performance.now() + 4500 + CHARACTER_TEMPLATES[id].seed * 420,
       scratchingUntil: 0,
       scratchDropped: false,
+      action: id === "baby" ? "crawl" : "walk",
+      actionStartedAt: performance.now(),
+      actionUntil: 0,
+      actionIndex: 0,
     })),
   };
 }
@@ -432,134 +453,64 @@ function createRobotBody() {
   suctionLight.position.set(0, .02, -1.0); camera.add(suctionLight);
 }
 
-function hairTexture(kind, cat) {
-  return pixelTexture(96, 64, (g) => {
-    g.clearRect(0, 0, 96, 64);
-    const pale = cat === "kotaro" ? "rgba(225,222,213,.98)" : "rgba(242,229,211,.98)";
-    const shade = cat === "kotaro" ? "rgba(105,104,101,.78)" : "rgba(139,116,101,.72)";
-    g.lineCap = "round";
-    g.lineJoin = "round";
-    if (kind === "long") {
-      g.fillStyle = cat === "kotaro" ? "rgba(156,154,149,.18)" : "rgba(224,204,184,.22)";
-      g.beginPath(); g.ellipse(48, 35, 27, 9, 0, 0, Math.PI * 2); g.fill();
-      for (let i = 0; i < 16; i += 1) {
-        const y = 25 + (i % 6) * 3;
-        const startX = 17 + (i * 11) % 23;
-        const endX = 55 + (i * 17) % 23;
-        g.strokeStyle = i % 4 === 0 ? shade : pale;
-        g.lineWidth = i % 3 === 0 ? 2.6 : 1.8;
-        g.beginPath();
-        g.moveTo(startX, y + (i % 3) * 2);
-        g.bezierCurveTo(28 + (i % 5) * 5, 12 + (i % 4) * 6, 66 - (i % 4) * 5, 54 - (i % 5) * 5, endX, y - 2);
-        g.stroke();
-      }
-      return;
-    }
-    const strands = kind === "giant" ? 34 : 20;
-    const cx = 48; const cy = 37;
-    for (let i = 0; i < strands; i += 1) {
-      const a = (i / strands) * Math.PI * 2;
-      const inner = 4 + (i % 4);
-      const outer = (kind === "giant" ? 25 : 17) + (i % 7);
-      g.strokeStyle = i % 5 === 0 ? shade : pale;
-      g.lineWidth = kind === "giant" && i % 4 === 0 ? 4 : 2.2;
-      g.beginPath();
-      g.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner * .58);
-      g.quadraticCurveTo(cx + Math.cos(a + .52) * outer * .72, cy + Math.sin(a + .38) * outer * .42, cx + Math.cos(a) * outer, cy + Math.sin(a) * outer * .58);
-      g.stroke();
-    }
-    g.fillStyle = cat === "kotaro" ? "rgba(156,154,149,.28)" : "rgba(224,204,184,.34)";
-    g.beginPath(); g.ellipse(cx, cy, kind === "giant" ? 16 : 10, kind === "giant" ? 9 : 6, 0, 0, Math.PI * 2); g.fill();
-  });
-}
-
 function addHairObject(hair) {
-  const kind = hair.dropped ? "tuft" : hair.id % 7 === 0 ? "giant" : hair.id % 6 === 1 || hair.id % 6 === 4 ? "long" : "tuft";
-  if ((kind === "giant" || kind === "long") && giantHairTexture) {
-    const material = new THREE.SpriteMaterial({ map: giantHairTexture, color: hair.cat === "kotaro" ? 0xd9d5cd : 0xfff2e4, transparent: true, depthWrite: false, alphaTest: .05, toneMapped: false });
-    const sprite = new THREE.Sprite(material);
-    const standout = kind === "giant" && hair.id % 14 === 0;
-    const width = kind === "giant" ? (standout ? .62 : .5) : .46;
-    sprite.scale.set(hair.id % 2 ? -width : width, kind === "giant" ? (standout ? .44 : .35) : .22, 1); sprite.center.set(.5, .12); sprite.position.set(hair.x, .028, hair.z);
-    sprite.material.rotation = ((hair.id * 47) % 11 - 5) * .035;
-    sprite.userData.kind = kind;
-    world.add(sprite); hairObjects.set(hair.id, sprite);
-    return sprite;
-  }
-  if (kind === "long") {
-    const group = new THREE.Group();
-    const count = kind === "giant" ? 22 : 12;
-    const pale = new THREE.MeshStandardMaterial({ color: hair.cat === "kotaro" ? 0xe2ded4 : 0xf1e3d3, roughness: 1 });
-    const shade = new THREE.MeshStandardMaterial({ color: hair.cat === "kotaro" ? 0x8b8983 : 0xaa8f7e, roughness: 1 });
-    for (let i = 0; i < count; i += 1) {
-      const angle = kind === "giant" ? i / count * Math.PI * 2 : (i % 4 - 1.5) * .18;
-      const length = kind === "giant" ? .18 + (i % 6) * .026 : .34 + (i % 5) * .035;
-      const startX = kind === "giant" ? Math.cos(angle) * .025 : -.2 + (i % 5) * .025;
-      const startZ = kind === "giant" ? Math.sin(angle) * .025 : (i % 4 - 1.5) * .018;
-      const points = [];
-      for (let p = 0; p < 5; p += 1) {
-        const t = p / 4;
-        const wave = Math.sin(t * Math.PI * 2 + i * 1.7) * (kind === "giant" ? .045 : .032);
-        points.push(new THREE.Vector3(
-          startX + Math.cos(angle) * length * t + Math.sin(angle) * wave,
-          .018 + Math.sin(t * Math.PI + i) * .012,
-          startZ + Math.sin(angle) * length * t - Math.cos(angle) * wave,
-        ));
-      }
-      const strand = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 8, i % 4 === 0 ? .011 : .007, 3, false), i % 5 === 0 ? shade : pale);
-      strand.castShadow = true; group.add(strand);
-    }
-    if (kind === "giant") {
-      const core = new THREE.Mesh(new THREE.SphereGeometry(.13, 9, 6), pale);
-      core.scale.set(1.35, .28, 1); core.position.y = .025; core.castShadow = true; group.add(core);
-    }
-    group.position.set(hair.x, .012, hair.z);
-    group.rotation.y = ((hair.id * 47) % 11 - 5) * .11;
-    group.userData.kind = kind; group.userData.isStrandGroup = true;
-    world.add(group); hairObjects.set(hair.id, group);
-    return group;
-  }
-  const cacheKey = `${kind}-${hair.cat}`;
-  if (!hairTextureCache.has(cacheKey)) hairTextureCache.set(cacheKey, hairTexture(kind, hair.cat));
-  const material = new THREE.SpriteMaterial({ map: hairTextureCache.get(cacheKey), transparent: true, depthWrite: false, alphaTest: .06, toneMapped: false });
+  if (!hairAtlasTexture) return null;
+  const frame = hair.dropped ? 2 : hair.cat === "yuragi" && hair.id % 5 === 0 ? 7 : hair.id % 11 === 0 ? 5 : hair.id % 7 === 0 ? 6 : hair.id % 5 === 0 ? 4 : hair.id % 3 === 0 ? 3 : hair.id % 2 === 0 ? 1 : 0;
+  const kind = frame === 5 ? "giant" : frame === 3 || frame === 6 || frame === 7 ? "long" : "tuft";
+  const map = hairAtlasTexture.clone();
+  map.repeat.set(.25, .5);
+  map.offset.set((frame % 4) * .25, frame < 4 ? .5 : 0);
+  map.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, alphaTest: .06, toneMapped: false });
   material.rotation = ((hair.id * 47) % 11 - 5) * .035;
   const sprite = new THREE.Sprite(material);
-  const scale = kind === "giant" ? [.68, .43] : kind === "long" ? [.66, .28] : hair.dropped ? [.46, .30] : [.38, .25];
-  sprite.scale.set(scale[0], scale[1], 1); sprite.center.set(.5, .12); sprite.position.set(hair.x, .028, hair.z);
+  const scales = [[.38,.18],[.32,.23],[.52,.31],[.78,.28],[.64,.36],[1.02,.5],[.72,.17],[.74,.29]];
+  const scale = scales[frame];
+  sprite.scale.set(hair.id % 2 ? -scale[0] : scale[0], scale[1], 1); sprite.center.set(.5, .12); sprite.position.set(hair.x, .028, hair.z);
   sprite.userData.kind = kind;
+  sprite.userData.hairFrame = frame;
   world.add(sprite); hairObjects.set(hair.id, sprite);
   return sprite;
 }
 
 async function buildGameObjects() {
   const loader = new THREE.TextureLoader();
-  const [master, giantTexture] = await Promise.all([
-    loader.loadAsync("./public/assets/characters-master-v3.png"),
-    loader.loadAsync("./public/assets/hair-fluff-cropped-v3.png"),
+  const animationEntries = Object.entries(CHARACTER_ANIMATIONS).flatMap(([type, actions]) =>
+    Object.entries(actions).map(([action, path]) => ({ type, action, path })),
+  );
+  const loaded = await Promise.all([
+    ...animationEntries.map(({ path }) => loader.loadAsync(path)),
+    loader.loadAsync("./public/assets/animation/hair-collectibles-8-normalized.png"),
   ]);
-  master.colorSpace = THREE.SRGBColorSpace;
-  master.magFilter = THREE.NearestFilter;
-  master.minFilter = THREE.NearestMipmapNearestFilter;
-  giantTexture.colorSpace = THREE.SRGBColorSpace;
-  giantTexture.magFilter = THREE.LinearFilter;
-  giantTexture.minFilter = THREE.LinearMipmapLinearFilter;
-  giantHairTexture = giantTexture;
-  const specs = {
-    kotaro: { sx: 52, sy: 205, sw: 470, sh: 635, height: 1.82 },
-    yuragi: { sx: 500, sy: 190, sw: 600, sh: 660, height: 2.04 },
-    baby: { sx: 1040, sy: 270, sw: 480, sh: 600, height: 1.86 },
-  };
+  const hairAtlas = loaded.pop();
+  animationEntries.forEach(({ type, action }, index) => {
+    const texture = loaded[index];
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+    texture.repeat.set(.25, .5);
+    texture.offset.set(0, .5);
+    texture.userData.cellAspect = texture.image.width / (texture.image.height * 2);
+    characterAnimationTextures.set(`${type}:${action}`, texture);
+  });
+  hairAtlas.colorSpace = THREE.SRGBColorSpace;
+  hairAtlas.magFilter = THREE.NearestFilter;
+  hairAtlas.minFilter = THREE.NearestFilter;
+  hairAtlas.generateMipmaps = false;
+  hairAtlasTexture = hairAtlas;
+  const specs = { kotaro: { height: 2.25 }, yuragi: { height: 2.48 }, baby: { height: 2.12 } };
   for (const entity of Object.values(CHARACTER_TEMPLATES)) {
     const spec = specs[entity.type];
-    const map = master.clone();
-    map.repeat.set(spec.sw / master.image.width, spec.sh / master.image.height);
-    map.offset.set(spec.sx / master.image.width, 1 - (spec.sy + spec.sh) / master.image.height);
-    map.needsUpdate = true;
+    const initialAction = entity.type === "baby" ? "crawl" : "walk";
+    const map = characterAnimationTextures.get(`${entity.type}:${initialAction}`);
     const material = new THREE.SpriteMaterial({ map, transparent: true, alphaTest: .2, depthWrite: true, color: 0xfff8f2, toneMapped: false });
     const sprite = new THREE.Sprite(material);
-    sprite.scale.set(spec.height * spec.sw / spec.sh, spec.height, 1);
+    sprite.scale.set(spec.height * map.userData.cellAspect, spec.height, 1);
     sprite.center.set(.5, 0);
     sprite.position.set(entity.x, -.09, entity.z);
+    sprite.userData.baseHeight = spec.height;
+    sprite.userData.action = initialAction;
     world.add(sprite);
     characterObjects.set(entity.id, sprite);
 
@@ -608,6 +559,33 @@ function setFurnitureBlend(roots, facade, blend) {
   }
 }
 
+function animationFrame(entity, now) {
+  if (entity.action === "walk") return Math.floor((now * .0105 + entity.seed) % 8);
+  if (entity.action === "crawl") return Math.floor((now * .012 + entity.seed) % 8);
+  if (entity.action === "scratch") {
+    const sequence = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1];
+    return sequence[Math.floor((now - entity.actionStartedAt) / 92) % sequence.length];
+  }
+  const duration = Math.max(1, entity.actionUntil - entity.actionStartedAt);
+  const progress = Math.min(.999, Math.max(0, (now - entity.actionStartedAt) / duration));
+  return Math.min(7, Math.floor(progress * 8));
+}
+
+function setCharacterFrame(sprite, entity, now) {
+  const action = entity.type === "baby" ? "crawl" : entity.action;
+  const texture = characterAnimationTextures.get(`${entity.type}:${action}`);
+  if (!texture) return;
+  if (sprite.material.map !== texture) {
+    sprite.material.map = texture;
+    sprite.material.needsUpdate = true;
+  }
+  const frameIndex = animationFrame(entity, now);
+  texture.offset.set((frameIndex % 4) * .25, frameIndex < 4 ? .5 : 0);
+  sprite.userData.action = action;
+  sprite.userData.frameIndex = frameIndex;
+  sprite.userData.actionWidth = sprite.userData.baseHeight * texture.userData.cellAspect;
+}
+
 function syncScene(now, dt) {
   const follow = 1 - Math.exp(-dt * 9);
   visual.x += (state.player.x - visual.x) * follow;
@@ -634,23 +612,30 @@ function syncScene(now, dt) {
   for (const entity of state.wanderers) {
     const sprite = characterObjects.get(entity.id);
     if (!sprite) continue;
-    sprite.position.set(entity.x, -.09, entity.z);
+    setCharacterFrame(sprite, entity, now);
     const distance = Math.hypot(entity.x - state.player.x, entity.z - state.player.z);
     sprite.visible = distance > .55;
-    const specWidth = sprite.userData.baseWidth || sprite.scale.x;
+    const specWidth = sprite.userData.actionWidth || sprite.scale.x;
     const specHeight = sprite.userData.baseHeight || sprite.scale.y;
-    sprite.userData.baseWidth = specWidth;
-    sprite.userData.baseHeight = specHeight;
-    const nearScale = Math.min(1, Math.max(.25, distance / 2.6));
+    const nearScale = Math.min(1, Math.max(.22, distance / 4.4));
     const scratching = now < entity.scratchingUntil;
+    const moving = entity.type === "baby" || entity.action === "walk";
+    const gait = now * (entity.type === "baby" ? .012 : .0105) + entity.seed;
+    const lift = moving ? Math.abs(Math.sin(gait * Math.PI)) * (entity.type === "baby" ? .018 : .028) : 0;
+    sprite.position.set(entity.x, -.09 + lift, entity.z);
     const travelView = normalizedAngle(entity.angle - Math.atan2(state.player.x - entity.x, state.player.z - entity.z));
     const side = Math.sin(travelView);
     sprite.scale.x = Math.sign(side || 1) * specWidth * nearScale * (.76 + Math.abs(Math.cos(travelView)) * .24);
-    sprite.scale.y = specHeight * nearScale * (scratching ? .94 + Math.sin(now * .035) * .035 : 1);
+    sprite.scale.y = specHeight * nearScale * (1 - lift * .12);
     sprite.material.color.set(Math.cos(travelView) < -.2 ? 0xe7ddd8 : 0xfff8f2);
-    sprite.material.rotation = scratching ? Math.sin(now * .035) * .11 : Math.sin(now * .007 + entity.seed) * (entity.type === "baby" ? .035 : .018);
+    sprite.material.rotation = scratching ? Math.sin(now * .028) * .018 : Math.sin(gait) * (entity.type === "baby" ? .012 : .008);
     const shadow = characterShadows.get(entity.id);
-    if (shadow) { shadow.position.set(entity.x, .012, entity.z); shadow.visible = sprite.visible; }
+    if (shadow) {
+      shadow.position.set(entity.x, .012, entity.z);
+      shadow.scale.x = 1 - lift * 1.8;
+      shadow.scale.y = .42 * (1 - lift * 1.2);
+      shadow.visible = sprite.visible;
+    }
   }
   for (const hair of state.hairs) {
     const object = hairObjects.get(hair.id);
@@ -667,6 +652,8 @@ function syncScene(now, dt) {
   canvas.dataset.angle = visual.angle.toFixed(3);
   canvas.dataset.roster = state.wanderers.map((entity) => entity.id).join(",");
   canvas.dataset.droppedHairs = state.hairs.filter((hair) => hair.dropped).length.toString();
+  canvas.dataset.actions = state.wanderers.map((entity) => `${entity.id}:${entity.action}`).join(",");
+  canvas.dataset.frames = state.wanderers.map((entity) => `${entity.id}:${characterObjects.get(entity.id)?.userData.frameIndex ?? 0}`).join(",");
   canvas.dataset.position = `${state.player.x.toFixed(2)},${state.player.z.toFixed(2)}`;
   canvas.dataset.under = under ? "sofa" : underTable ? "table" : "room";
   canvas.setAttribute("aria-label", `床すれすれの掃除機視点のゲーム画面。現在地: ${under ? "ソファの下" : underTable ? "机の下" : "部屋"}`);
@@ -695,12 +682,18 @@ function update(dt, now) {
   if (resolved.hit && now - state.lastCollisionAt > 450) { state.lastCollisionAt = now; showMessage("こつん"); }
   state.player.x = resolved.x; state.player.z = resolved.z;
   for (const entity of state.wanderers) {
-    if (entity.type !== "baby" && now >= entity.scratchAt && now >= entity.scratchingUntil) {
-      entity.scratchingUntil = now + 1150;
-      entity.scratchAt = now + 7600 + entity.seed * 310;
-      entity.scratchDropped = false;
+    if (entity.type !== "baby" && now >= entity.scratchAt && now >= entity.actionUntil) {
+      const actions = ["scratch", "stretch", "yawn"];
+      const nextAction = entity.forcedAction || actions[entity.actionIndex++ % actions.length];
+      entity.forcedAction = null;
+      entity.action = nextAction;
+      entity.actionStartedAt = now;
+      entity.actionUntil = now + (entity.debugActionDuration || (nextAction === "scratch" ? 1350 : nextAction === "stretch" ? 1750 : 1850));
+      entity.scratchingUntil = nextAction === "scratch" ? entity.actionUntil : 0;
+      entity.scratchAt = entity.actionUntil + 4300 + entity.seed * 260;
+      entity.scratchDropped = nextAction !== "scratch";
     }
-    if (now < entity.scratchingUntil) {
+    if (now < entity.actionUntil) {
       if (!entity.scratchDropped) {
         entity.scratchDropped = true;
         const dropped = createDroppedHair(entity, Math.max(...state.hairs.map((hair) => hair.id)) + 1);
@@ -709,6 +702,7 @@ function update(dt, now) {
         showMessage(`${entity.type === "kotaro" ? "虎太郎" : "ゆらぎ"} かいかい…`);
       }
     } else {
+      entity.action = entity.type === "baby" ? "crawl" : "walk";
       stepWanderer(entity, dt, now);
     }
     if (circlesOverlap(state.player, state.player.radius, entity, entity.radius)) {
@@ -824,9 +818,20 @@ async function init() {
     if (params.has("spin")) keys.add("ArrowLeft");
     if (params.has("drive")) { input.y = -.72; input.anchorAngle = state.player.angle; }
     if (params.get("steer") === "right") { input.x = .72; input.y = -.72; input.anchorAngle = state.player.angle; }
-    if (params.has("scratch")) {
+    const requestedActor = params.get("actor");
+    if (requestedActor) {
+      const actor = state.wanderers.find((entity) => entity.type === requestedActor)
+        || state.wanderers.find((entity) => requestedActor === "baby" ? entity.type === "baby" : entity.type !== "baby");
+      if (actor) { actor.x = 0; actor.z = 2.35; actor.angle = Math.PI; }
+    }
+    const forcedAction = params.get("action") || (params.has("scratch") ? "scratch" : null);
+    if (forcedAction) {
       const cat = state.wanderers.find((entity) => entity.type !== "baby");
-      if (cat) cat.scratchAt = 0;
+      if (cat) {
+        cat.forcedAction = forcedAction;
+        cat.scratchAt = 0;
+        if (requestedActor) cat.debugActionDuration = forcedAction === "scratch" ? 10000 : forcedAction === "stretch" ? 1750 : 1850;
+      }
     }
   }
 }
