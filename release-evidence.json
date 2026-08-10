@@ -41,8 +41,8 @@
     {
       "name": "GitHub source distribution",
       "category": "distribution",
-      "status": "not-applicable",
-      "evidence": "This record is generated before the requested initial GitHub push and will be verified from the remote commit immediately after push"
+      "status": "pass",
+      "evidence": "Initial release commit 428def8 was pushed to ochuri/neko-souji-game main and verified through refs/heads/main"
     },
     {
       "name": "public deployment",
