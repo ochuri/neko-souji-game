@@ -35,7 +35,7 @@ button { font: inherit; }
   pointer-events: none;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
-  filter: drop-shadow(0 -5px 9px rgba(34, 29, 39, .24));
+  filter: contrast(.9) saturate(.82) drop-shadow(0 -4px 7px rgba(34, 29, 39, .22));
 }
 .robot-foreground[hidden] { display: none; }
 

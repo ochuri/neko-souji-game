@@ -13,7 +13,7 @@ import {
   stepWanderer,
   sweptEllipseOverlap,
   turnToward,
-} from "./core.js?v=pixel29";
+} from "./core.js?v=pixel36";
 
 const canvas = document.querySelector("#game");
 const ui = {
@@ -76,6 +76,11 @@ const actorSolids = [
   ...solids,
   { id: "sofa-body", kind: "rect", x: sofa.x, z: sofa.z, w: sofa.w, d: sofa.d },
   { id: "table-body", kind: "rect", x: tableArea.x, z: tableArea.z, w: tableArea.w, d: tableArea.d },
+  // A chair is visually much wider than its four narrow legs. Actors must
+  // steer around that visible footprint so their face/body never intersects
+  // the seat even when the billboard turns toward the camera.
+  { id: "chair-a-body", kind: "rect", x: -3.9, z: 4.6, w: 1.24, d: 1.24 },
+  { id: "chair-b-body", kind: "rect", x: -4.0, z: 8.4, w: 1.24, d: 1.24 },
 ];
 
 const vomits = [
@@ -115,7 +120,7 @@ let robotRing = null;
 let suctionLight = null;
 let hairAtlasTexture = null;
 const projectedActorFoot = new THREE.Vector3();
-const RENDER_SCALE = .55;
+const RENDER_SCALE = .68;
 const OUTLINE_COLOR = 0x49313b;
 const toonRamp = new THREE.DataTexture(new Uint8Array([58, 118, 184, 238, 255]), 5, 1, THREE.RedFormat);
 toonRamp.needsUpdate = true;
@@ -139,11 +144,11 @@ function addPixelOutline(mesh, threshold = 28, shellScale = 1.012) {
 }
 
 const HAIR_VARIANTS = [
-  { name: "tiny-fluff", frame: 0, scale: [.2, .13], parts: [[0,.065,0,.18,.13]] },
-  { name: "round-fluff", frame: 1, scale: [.27, .18], parts: [[0,.085,0,.25,.18]] },
-  { name: "soft-pair", frame: 2, scale: [.36, .17], parts: [[-.085,.07,0,.18,.13],[.085,.065,.012,.17,.12]] },
-  { name: "big-airy-fluff", frame: 3, scale: [.37, .23], parts: [[0,.11,0,.34,.23]] },
-  { name: "asymmetric-cluster", frame: 4, scale: [.4, .2], parts: [[-.055,.09,0,.24,.17],[.125,.055,.015,.16,.11]] },
+  { name: "tiny-fluff", frame: 0, scale: [.2, .09], parts: [[0,.045,0,.18,.09]] },
+  { name: "round-fluff", frame: 1, scale: [.27, .12], parts: [[0,.06,0,.25,.12]] },
+  { name: "soft-pair", frame: 2, scale: [.36, .12], parts: [[-.085,.05,0,.18,.1],[.085,.045,.012,.17,.09]] },
+  { name: "big-airy-fluff", frame: 3, scale: [.39, .16], parts: [[0,.08,0,.36,.16]] },
+  { name: "asymmetric-cluster", frame: 4, scale: [.4, .14], parts: [[-.055,.065,0,.24,.13],[.125,.04,.015,.16,.08]] },
 ];
 
 function playerActorRadius(entity) {
@@ -166,7 +171,7 @@ function actorFootReachedRobot(entity) {
 }
 
 function actorFurnitureRadius(entity) {
-  return entity.type === "baby" ? .4 : entity.type === "yuragi" ? .5 : .45;
+  return entity.type === "baby" ? .7 : entity.type === "yuragi" ? .64 : .58;
 }
 
 function makeState() {
@@ -277,6 +282,24 @@ function softShadowTexture() {
   return texture;
 }
 
+function hairFluffTexture(image) {
+  const source = document.createElement("canvas");
+  source.width = 48; source.height = 32;
+  const g = source.getContext("2d");
+  g.imageSmoothingEnabled = true;
+  // Crop the canonical master to its visible fibers. The old transparent
+  // footer caused the floating gap; retaining the real short fibers avoids a
+  // cloud silhouette while the downsample keeps them calm and pixel-friendly.
+  g.drawImage(image, 6, 6, 59, 43, 0, 0, 48, 32);
+  g.globalCompositeOperation = "source-atop";
+  g.fillStyle = "rgba(255,229,207,.14)"; g.fillRect(0, 0, 48, 32);
+  const texture = new THREE.CanvasTexture(source);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = texture.minFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
 function buildRoom() {
   const floorTexture = pixelTexture(192, 256, (g, w, h) => {
     g.fillStyle = "#d09a78"; g.fillRect(0, 0, w, h);
@@ -333,7 +356,26 @@ function buildRoom() {
   fill.position.set(-4, 1.5, 5); scene.add(fill);
   buildSofa();
   buildTable();
+  buildWallRelief();
   buildDecor();
+}
+
+function buildWallRelief() {
+  const trimTexture = pixelTexture(48, 24, (g, w, h) => {
+    g.fillStyle = "#c9aeb1"; g.fillRect(0, 0, w, h);
+    g.fillStyle = "rgba(255,239,229,.34)"; g.fillRect(0, 2, w, 3);
+    g.fillStyle = "rgba(94,67,78,.16)"; g.fillRect(0, h - 4, w, 2);
+  }, 3, 1);
+  // Real shallow moulding catches the scene light from every angle, keeping
+  // the four walls from turning into a single flat backdrop.
+  for (const z of [-2.96, 11.7]) {
+    box(10.78, .085, .06, 0xc9aeb1, 0, 2.02, z, trimTexture);
+    for (const x of [-5.25, 5.25]) box(.08, 2.0, .07, 0xc9aeb1, x, 1.02, z, trimTexture);
+  }
+  for (const x of [-5.34, 5.34]) {
+    box(.06, .085, 14.72, 0xc9aeb1, x, 2.02, 4.3, trimTexture);
+    for (const z of [-2.82, 11.42]) box(.07, 2.0, .08, 0xc9aeb1, x, 1.02, z, trimTexture);
+  }
 }
 
 async function buildBackWallArt() {
@@ -564,29 +606,56 @@ function addHairObject(hair) {
   const variant = HAIR_VARIANTS[hair.dropped ? 1 : hair.id % HAIR_VARIANTS.length];
   const group = new THREE.Group();
   const [width, height] = variant.scale;
-  for (const [x, y, z, partWidth, partHeight] of variant.parts) {
-    const material = new THREE.SpriteMaterial({ map: hairAtlasTexture, transparent: true, opacity: 1, depthWrite: false, alphaTest: .01, toneMapped: false });
-    material.color.set(hair.cat === "yuragi" ? 0xfff7ef : 0xf0e8e3);
+  for (const [x, , z, partWidth, partHeight] of variant.parts) {
+    const material = new THREE.SpriteMaterial({ map: hairAtlasTexture, transparent: true, opacity: 1, depthWrite: false, alphaTest: .1, toneMapped: false });
+    material.color.set(hair.cat === "yuragi" ? 0xfff8ec : 0xfff1df);
     const sprite = new THREE.Sprite(material);
     sprite.scale.set(hair.id % 2 ? -partWidth : partWidth, partHeight, 1);
-    sprite.center.set(.5, .06);
-    sprite.position.set(hair.id % 2 ? -x : x, y, z);
+    sprite.center.set(.5, 0);
+    sprite.position.set(hair.id % 2 ? -x : x, .002, z);
     group.add(sprite);
   }
-  group.position.set(hair.x, .006, hair.z);
+  group.position.set(hair.x, .001, hair.z);
   group.userData.kind = variant.name;
   group.userData.hairFrame = variant.frame;
   world.add(group); hairObjects.set(hair.id, group);
 
   const shadow = new THREE.Mesh(
     new THREE.CircleGeometry(.5, 20),
-    new THREE.MeshBasicMaterial({ color: 0x574a59, transparent: true, opacity: .065, depthWrite: false, toneMapped: false }),
+    new THREE.MeshBasicMaterial({ color: 0x574a59, transparent: true, opacity: .12, depthWrite: false, toneMapped: false }),
   );
   shadow.rotation.x = -Math.PI / 2;
-  shadow.scale.set(width * .72, Math.max(.055, height * .32), 1);
-  shadow.position.set(hair.x, .004, hair.z);
+  shadow.scale.set(width * .78, Math.max(.045, height * .25), 1);
+  shadow.position.set(hair.x, .002, hair.z);
   world.add(shadow); hairShadows.set(hair.id, shadow);
   return group;
+}
+
+function addVomitObject(item) {
+  const group = new THREE.Group();
+  group.position.set(item.x, .008, item.z);
+  world.add(group);
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(item.radius * 1.08, 20),
+    new THREE.MeshBasicMaterial({ color: 0x4b3935, transparent: true, opacity: .16, depthWrite: false, toneMapped: false }),
+  );
+  shadow.rotation.x = -Math.PI / 2; shadow.scale.y = .62; group.add(shadow);
+  const pieces = [
+    [0, 0, 1, .66, 0x87704d],
+    [-.22, .035, .55, .42, 0x9c8055],
+    [.22, -.02, .48, .38, 0x746245],
+    [.42, .13, .14, .1, 0x9d8057],
+    [-.38, -.12, .11, .08, 0x6f5d43],
+  ];
+  for (const [x, z, sx, sz, color] of pieces) {
+    const blob = new THREE.Mesh(new THREE.SphereGeometry(item.radius, 12, 6), pixelMaterial({ color }));
+    blob.scale.set(sx, .075, sz); blob.position.set(x * item.radius, .018, z * item.radius);
+    blob.castShadow = true; blob.receiveShadow = true; addPixelOutline(blob, 28, 1.008); group.add(blob);
+  }
+  for (const [x, z, size] of [[-.12,-.03,.045],[.08,.04,.035],[.21,-.02,.028]]) {
+    const crumb = new THREE.Mesh(new THREE.SphereGeometry(size, 8, 5), pixelMaterial({ color: 0xc3a36d }));
+    crumb.scale.y = .55; crumb.position.set(x, .055, z); group.add(crumb);
+  }
 }
 
 async function buildGameObjects() {
@@ -598,7 +667,7 @@ async function buildGameObjects() {
     ...animationEntries.map(({ path }) => loader.loadAsync(path)),
     loader.loadAsync("./public/assets/animation/hair-canonical-tuft-v3.png"),
   ]);
-  const hairAtlas = loaded.pop();
+  const hairSource = loaded.pop();
   animationEntries.forEach(({ type, action }, index) => {
     const texture = loaded[index];
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -610,11 +679,7 @@ async function buildGameObjects() {
     texture.userData.cellAspect = texture.image.width / (texture.image.height * 2);
     characterAnimationTextures.set(`${type}:${action}`, texture);
   });
-  hairAtlas.colorSpace = THREE.SRGBColorSpace;
-  hairAtlas.magFilter = THREE.NearestFilter;
-  hairAtlas.minFilter = THREE.NearestFilter;
-  hairAtlas.generateMipmaps = false;
-  hairAtlasTexture = hairAtlas;
+  hairAtlasTexture = hairFluffTexture(hairSource.image);
   const specs = {
     kotaro: { height: 1.18, groundY: -.075 },
     yuragi: { height: 1.28, groundY: -.09 },
@@ -651,10 +716,7 @@ async function buildGameObjects() {
   for (const hair of state.hairs) {
     addHairObject(hair);
   }
-  for (const item of vomits) {
-    const mesh = new THREE.Mesh(new THREE.CircleGeometry(item.radius, 12), pixelMaterial({ color: 0x777044, side: THREE.DoubleSide }));
-    mesh.rotation.x = -Math.PI / 2; mesh.scale.y = .62; mesh.position.set(item.x, .012, item.z); mesh.receiveShadow = true; world.add(mesh);
-  }
+  for (const item of vomits) addVomitObject(item);
 }
 
 function resize() {
@@ -741,10 +803,10 @@ function syncScene(now, dt) {
   for (const hair of state.hairs) {
     const object = hairObjects.get(hair.id);
     if (!object) continue;
-    object.position.set(hair.x, .006, hair.z);
+    object.position.set(hair.x, .001, hair.z);
     const shadow = hairShadows.get(hair.id);
     if (shadow) {
-      shadow.position.set(hair.x, .004, hair.z);
+      shadow.position.set(hair.x, .002, hair.z);
       shadow.visible = object.visible;
     }
   }
@@ -1050,8 +1112,11 @@ async function init() {
       if (actor) {
         const actorZone = params.get("actorZone");
         if (actorZone === "sofa") { actor.x = sofa.x; actor.z = 3.7; actor.angle = 0; }
-        else if (actorZone === "table") { actor.x = tableArea.x; actor.z = 4.65; actor.angle = 0; }
+        else if (actorZone === "table") { actor.x = .15; actor.z = 4.4; actor.angle = 0; }
         else { actor.x = 0; actor.z = 3.8; actor.angle = Math.PI; }
+        // Debug routes are visual proof routes: isolate the requested actor so
+        // another roster member cannot be mistaken for the target.
+        state.wanderers = [actor];
       }
     }
     const forcedAction = params.get("action") || (params.has("scratch") ? "scratch" : null);
