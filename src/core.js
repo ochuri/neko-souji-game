@@ -8,10 +8,51 @@ export function circlesOverlap(a, ar, b, br) {
   return distance(a, b) < ar + br;
 }
 
+export function sweptCirclesOverlap(a0, a1, ar, b0, b1, br) {
+  const startX = a0.x - b0.x;
+  const startZ = a0.z - b0.z;
+  const moveX = (a1.x - a0.x) - (b1.x - b0.x);
+  const moveZ = (a1.z - a0.z) - (b1.z - b0.z);
+  const movementSquared = moveX * moveX + moveZ * moveZ;
+  const progress = movementSquared > 0
+    ? clamp(-(startX * moveX + startZ * moveZ) / movementSquared, 0, 1)
+    : 0;
+  const closestX = startX + moveX * progress;
+  const closestZ = startZ + moveZ * progress;
+  const radius = ar + br;
+  return closestX * closestX + closestZ * closestZ < radius * radius;
+}
+
+export function sweptEllipseOverlap(a0, a1, b0, b1, rightRadius, forwardRadius, angle) {
+  const rightX = Math.cos(angle);
+  const rightZ = -Math.sin(angle);
+  const forwardX = Math.sin(angle);
+  const forwardZ = Math.cos(angle);
+  const relative = (a, b) => {
+    const dx = a.x - b.x;
+    const dz = a.z - b.z;
+    return {
+      x: (dx * rightX + dz * rightZ) / rightRadius,
+      z: (dx * forwardX + dz * forwardZ) / forwardRadius,
+    };
+  };
+  const start = relative(a0, b0);
+  const end = relative(a1, b1);
+  const moveX = end.x - start.x;
+  const moveZ = end.z - start.z;
+  const movementSquared = moveX * moveX + moveZ * moveZ;
+  const progress = movementSquared > 0
+    ? clamp(-(start.x * moveX + start.z * moveZ) / movementSquared, 0, 1)
+    : 0;
+  const closestX = start.x + moveX * progress;
+  const closestZ = start.z + moveZ * progress;
+  return closestX * closestX + closestZ * closestZ < 1;
+}
+
 export function actorContactRadius(type) {
-  if (type === "baby") return .42;
-  if (type === "yuragi") return .5;
-  return .44;
+  if (type === "baby") return .08;
+  if (type === "yuragi") return .08;
+  return .08;
 }
 
 export function clamp(value, min, max) {

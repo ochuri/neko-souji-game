@@ -1,7 +1,6 @@
 import * as THREE from "../public/vendor/three.module.js";
 import {
   actorContactRadius,
-  circlesOverlap,
   collectTouchedHair,
   createDroppedHair,
   createInitialHair,
@@ -12,8 +11,9 @@ import {
   normalizedAngle,
   resolveMovement,
   stepWanderer,
+  sweptEllipseOverlap,
   turnToward,
-} from "./core.js?v=pixel2";
+} from "./core.js?v=pixel27";
 
 const canvas = document.querySelector("#game");
 const ui = {
@@ -114,7 +114,8 @@ let audio = null;
 let robotRing = null;
 let suctionLight = null;
 let hairAtlasTexture = null;
-const RENDER_SCALE = .62;
+const projectedActorFoot = new THREE.Vector3();
+const RENDER_SCALE = .55;
 
 const HAIR_VARIANTS = [
   { name: "tiny-fluff", frame: 0, scale: [.2, .13], parts: [[0,.065,0,.18,.13]] },
@@ -126,6 +127,21 @@ const HAIR_VARIANTS = [
 
 function playerActorRadius(entity) {
   return actorContactRadius(entity.type);
+}
+
+function actorFootWidth(entity) {
+  return entity.type === "baby" ? .2 : entity.type === "yuragi" ? .25 : .22;
+}
+
+function actorFootReachedRobot(entity) {
+  projectedActorFoot.set(entity.x, 0, entity.z).project(camera);
+  if (projectedActorFoot.z < -1 || projectedActorFoot.z > 1) return false;
+  const footY = (1 - projectedActorFoot.y) * .5 * canvas.clientHeight;
+  // The PNG has transparent pixels above the visible shell, so its DOM box is
+  // not the robot's visual leading edge. Use the actual on-screen shell line.
+  const robotTop = canvas.clientHeight * .79;
+  entity.footScreenY = footY;
+  return footY >= robotTop - 145;
 }
 
 function actorFurnitureRadius(entity) {
@@ -162,7 +178,7 @@ function box(w, h, d, color, x, y, z, texture = null) {
   mesh.receiveShadow = true;
   world.add(mesh);
   if (Math.max(w, h, d) < 5) {
-    const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x604b52, transparent: true, opacity: .22 }));
+    const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x3b2f39, transparent: true, opacity: .5 }));
     mesh.add(outline);
   }
   return mesh;
@@ -193,7 +209,7 @@ function roundedBox(w, h, d, radius, color, x, y, z, texture = null) {
   const material = new THREE.MeshStandardMaterial({ color: texture ? 0xffffff : color, roughness: .8, metalness: 0, map: texture, bumpMap: texture, bumpScale: texture ? .018 : 0 });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; world.add(mesh);
-  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 38), new THREE.LineBasicMaterial({ color: 0x604b52, transparent: true, opacity: .045 }));
+  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 38), new THREE.LineBasicMaterial({ color: 0x3f3140, transparent: true, opacity: .42 }));
   mesh.add(outline);
   return mesh;
 }
@@ -205,7 +221,7 @@ function taperedLeg(radiusTop, radiusBottom, height, x, z, texture, color = 0x71
   leg.position.set(x, height / 2, z);
   leg.castShadow = true;
   leg.receiveShadow = true;
-  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 42), new THREE.LineBasicMaterial({ color: 0x4d3030, transparent: true, opacity: .08 }));
+  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 42), new THREE.LineBasicMaterial({ color: 0x38272d, transparent: true, opacity: .44 }));
   leg.add(outline);
   world.add(leg);
   return leg;
@@ -461,17 +477,23 @@ function buildChair(x, z, color, rotation = 0) {
   const addRounded = (w, h, d, radius, px, py, pz, material) => {
     const geometry = roundedBoxGeometry(w, h, d, radius);
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(px, py, pz); mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); return mesh;
+    mesh.position.set(px, py, pz); mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 38), new THREE.LineBasicMaterial({ color: 0x3c303b, transparent: true, opacity: .46 })));
+    group.add(mesh); return mesh;
   };
   addRounded(.88, .14, .92, .08, 0, .56, 0, cushionMaterial);
   for (const px of [-.44, .44]) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .072, .9, 8), chairWood);
-    post.position.set(px, .82, .47); post.castShadow = true; group.add(post);
+    post.position.set(px, .82, .47); post.castShadow = true;
+    post.add(new THREE.LineSegments(new THREE.EdgesGeometry(post.geometry, 24), new THREE.LineBasicMaterial({ color: 0x38272d, transparent: true, opacity: .46 })));
+    group.add(post);
   }
   for (const py of [.86, 1.08, 1.28]) addRounded(.8, .075, .09, .03, 0, py, .47, chairWood);
   for (const [px, pz] of [[-.41,-.4],[.41,-.4],[-.41,.4],[.41,.4]]) {
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(.052, .073, .54, 8), chairWood);
-    leg.position.set(px, .27, pz); leg.castShadow = true; group.add(leg);
+    leg.position.set(px, .27, pz); leg.castShadow = true;
+    leg.add(new THREE.LineSegments(new THREE.EdgesGeometry(leg.geometry, 24), new THREE.LineBasicMaterial({ color: 0x38272d, transparent: true, opacity: .46 })));
+    group.add(leg);
   }
   return group;
 }
@@ -660,7 +682,7 @@ function syncScene(now, dt) {
   const viewDrop = under ? .3 : underTable ? .12 : .025;
   visual.pitch += (viewDrop - visual.pitch) * follow;
   camera.lookAt(visual.x + Math.sin(visual.angle), camera.position.y - visual.pitch, visual.z + Math.cos(visual.angle));
-  camera.fov = 78 + Math.sin(now * .006) * .15;
+  camera.fov = 78;
   camera.updateProjectionMatrix();
   for (const sprite of characterObjects.values()) sprite.visible = false;
   for (const shadow of characterShadows.values()) shadow.visible = false;
@@ -669,26 +691,34 @@ function syncScene(now, dt) {
     if (!sprite) continue;
     setCharacterFrame(sprite, entity, now);
     const distance = Math.hypot(entity.x - state.player.x, entity.z - state.player.z);
-    sprite.visible = distance > .55;
+    sprite.visible = distance > .16;
     const specWidth = sprite.userData.actionWidth || sprite.scale.x;
     const specHeight = sprite.userData.baseHeight || sprite.scale.y;
+    const renderDistance = distance;
+    const renderX = entity.x;
+    const renderZ = entity.z;
+    const maxApparentHeight = entity.type === "baby" ? .72 : .9;
+    const nearScale = Math.min(1, renderDistance * maxApparentHeight / specHeight);
+    const nearForeground = distance < .65;
+    sprite.material.depthTest = !nearForeground;
+    sprite.material.depthWrite = !nearForeground;
     const scratching = now < entity.scratchingUntil;
     const moving = entity.type === "baby" || entity.action === "walk";
     const gait = now * (entity.type === "baby" ? .0145 : .0135) + entity.seed;
     const lift = moving ? Math.abs(Math.sin(gait * Math.PI)) * (entity.type === "baby" ? .018 : .028) : 0;
-    sprite.position.set(entity.x, sprite.userData.groundY + lift, entity.z);
+    sprite.position.set(renderX, sprite.userData.groundY + lift, renderZ);
     const travelView = normalizedAngle(entity.angle - Math.atan2(state.player.x - entity.x, state.player.z - entity.z));
     const side = Math.sin(travelView);
     if (sprite.userData.facing === undefined) sprite.userData.facing = side < 0 ? -1 : 1;
     if (side > .22) sprite.userData.facing = 1;
     else if (side < -.22) sprite.userData.facing = -1;
-    sprite.scale.x = sprite.userData.facing * specWidth;
-    sprite.scale.y = specHeight * (1 - lift * .12);
+    sprite.scale.x = sprite.userData.facing * specWidth * nearScale;
+    sprite.scale.y = specHeight * nearScale * (1 - lift * .12);
     sprite.material.color.set(Math.cos(travelView) < -.2 ? 0xe7ddd8 : 0xfff8f2);
     sprite.material.rotation = scratching ? Math.sin(now * .024) * .014 : Math.sin(gait) * (entity.type === "baby" ? .008 : .005);
     const shadow = characterShadows.get(entity.id);
     if (shadow) {
-      shadow.position.set(entity.x, .025, entity.z - .42);
+      shadow.position.set(renderX, .025, renderZ - .42);
       shadow.scale.x = shadow.userData.baseScaleX * (1 - lift * .7);
       shadow.scale.y = shadow.userData.baseScaleY * (1 - lift * .5);
       shadow.visible = sprite.visible;
@@ -709,6 +739,7 @@ function syncScene(now, dt) {
   canvas.dataset.view = "continuous-3d";
   canvas.dataset.world = "true-geometry";
   canvas.dataset.pixelScale = RENDER_SCALE.toString();
+  canvas.dataset.cameraMotion = "fixed-fov";
   canvas.dataset.angle = visual.angle.toFixed(3);
   canvas.dataset.roster = state.wanderers.map((entity) => entity.id).join(",");
   canvas.dataset.droppedHairs = state.hairs.filter((hair) => hair.dropped).length.toString();
@@ -721,6 +752,7 @@ function syncScene(now, dt) {
     return `${entity.id}:${(Math.abs(characterObjects.get(entity.id)?.scale.y ?? 0) / distance).toFixed(3)}`;
   }).join(",");
   canvas.dataset.actorPositions = state.wanderers.map((entity) => `${entity.id}:${entity.x.toFixed(2)},${entity.z.toFixed(2)}`).join(";");
+  canvas.dataset.actorFootY = state.wanderers.map((entity) => `${entity.id}:${(entity.footScreenY ?? 0).toFixed(1)}`).join(",");
   canvas.dataset.hairVariants = new Set([...hairObjects.values()].filter((object) => object.visible).map((object) => object.userData.hairFrame)).size.toString();
   canvas.dataset.position = `${state.player.x.toFixed(2)},${state.player.z.toFixed(2)}`;
   canvas.dataset.under = under ? "sofa" : underTable ? "table" : "room";
@@ -758,7 +790,7 @@ function update(dt, now) {
       entity.forcedAction = null;
       entity.action = nextAction;
       entity.actionStartedAt = now;
-      entity.actionUntil = now + (entity.debugActionDuration || (nextAction === "scratch" ? 1350 : nextAction === "stretch" ? 1750 : 1850));
+      entity.actionUntil = now + (entity.debugActionDuration || (nextAction === "scratch" ? 1350 : nextAction === "stretch" ? 3200 : 1850));
       entity.scratchingUntil = nextAction === "scratch" ? entity.actionUntil : 0;
       entity.scratchAt = entity.actionUntil + 4300 + entity.seed * 260;
       entity.scratchDropped = nextAction !== "scratch";
@@ -783,14 +815,39 @@ function update(dt, now) {
         entity.turnAt = now + 650;
       }
     }
+    // A stretching cat is visually much wider than its feet. Let it notice the
+    // approaching robot and shuffle aside before physical contact, without
+    // stopping the robot against an invisible sprite-sized wall.
+    const avoidDx = entity.x - state.player.x;
+    const avoidDz = entity.z - state.player.z;
+    const avoidRight = avoidDx * Math.cos(state.player.angle) - avoidDz * Math.sin(state.player.angle);
+    const avoidForward = avoidDx * Math.sin(state.player.angle) + avoidDz * Math.cos(state.player.angle);
+    if (entity.action === "stretch" && avoidForward > .2 && avoidForward < 1.35 && Math.abs(avoidRight) < .72) {
+      const direction = avoidRight >= 0 ? 1 : -1;
+      entity.angle = normalizedAngle(state.player.angle + direction * Math.PI / 2);
+      entity.targetAngle = entity.angle;
+      entity.turnAt = now + 1800;
+      const earlyStep = resolveMovement(entity, {
+        x: entity.x + Math.sin(entity.angle) * dt * 2.6,
+        z: entity.z + Math.cos(entity.angle) * dt * 2.6,
+      }, actorSolids, actorFurnitureRadius(entity));
+      entity.x = earlyStep.x;
+      entity.z = earlyStep.z;
+    }
     const actorContactRadius = playerActorRadius(entity);
-    if (circlesOverlap(state.player, state.player.radius, entity, actorContactRadius)) {
+    if (actorFootReachedRobot(entity) && sweptEllipseOverlap(
+      playerBeforeMove,
+      state.player,
+      entityBeforeUpdate,
+      entity,
+      state.player.radius + actorFootWidth(entity),
+      state.player.radius + actorContactRadius,
+      state.player.angle,
+    )) {
       const separation = state.player.radius + actorContactRadius + .03;
       if (Math.hypot(state.player.x - playerBeforeMove.x, state.player.z - playerBeforeMove.z) > .0001) {
         state.player.x = playerBeforeMove.x;
         state.player.z = playerBeforeMove.z;
-        entity.x = entityBeforeUpdate.x;
-        entity.z = entityBeforeUpdate.z;
       } else {
         const dx = entity.x - state.player.x;
         const dz = entity.z - state.player.z;
@@ -805,8 +862,17 @@ function update(dt, now) {
       }
       const dx = entity.x - state.player.x;
       const dz = entity.z - state.player.z;
-      entity.targetAngle = Math.atan2(dx, dz);
-      entity.turnAt = now + 500;
+      const lateral = dx * Math.cos(state.player.angle) - dz * Math.sin(state.player.angle);
+      entity.angle = normalizedAngle(state.player.angle + (lateral >= 0 ? Math.PI / 2 : -Math.PI / 2));
+      entity.targetAngle = entity.angle;
+      entity.turnAt = now + 1800;
+      const sidestepTarget = {
+        x: entity.x + Math.sin(entity.angle) * dt * 2.35,
+        z: entity.z + Math.cos(entity.angle) * dt * 2.35,
+      };
+      const sidestep = resolveMovement(entity, sidestepTarget, actorSolids, actorFurnitureRadius(entity));
+      entity.x = sidestep.x;
+      entity.z = sidestep.z;
       if (now - state.lastCollisionAt > 700) {
         state.lastCollisionAt = now;
         showMessage(entity.type === "baby" ? "あぶない、あぶない" : `${entity.type === "kotaro" ? "虎太郎" : "ゆらぎ"}、通ります`);
@@ -968,7 +1034,7 @@ async function init() {
       if (cat) {
         cat.forcedAction = forcedAction;
         cat.scratchAt = 0;
-        if (requestedActor) cat.debugActionDuration = forcedAction === "scratch" ? 10000 : forcedAction === "stretch" ? 1750 : 1850;
+        if (requestedActor) cat.debugActionDuration = forcedAction === "scratch" ? 10000 : forcedAction === "stretch" ? 10000 : 1850;
       }
     }
   }

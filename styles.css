@@ -28,8 +28,8 @@ button { font: inherit; }
   position: absolute;
   z-index: 2;
   left: 50%;
-  bottom: clamp(18px, 7vw, 32px);
-  width: min(126%, 650px);
+  bottom: clamp(-185px, -38.5vw, -145px);
+  width: min(180%, 800px);
   height: auto;
   transform: translateX(-50%);
   pointer-events: none;

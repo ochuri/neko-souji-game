@@ -1,13 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actorContactRadius, canVacuum, circlesOverlap, collectNearbyHair, collectTouchedHair, createDroppedHair, hitVomit, joystickHeading, keyboardTurn, normalizedAngle, resolveMovement, stepWanderer, turnToward } from "../src/core.js";
+import { actorContactRadius, canVacuum, circlesOverlap, collectNearbyHair, collectTouchedHair, createDroppedHair, hitVomit, joystickHeading, keyboardTurn, normalizedAngle, resolveMovement, stepWanderer, sweptCirclesOverlap, sweptEllipseOverlap, turnToward } from "../src/core.js";
 
 test("actor contact starts at the visible foot area, not the full sprite width", () => {
   const robot = { x: 0, z: 0 };
-  const yuragi = { x: .9, z: 0 };
+  const yuragi = { x: .55, z: 0 };
   assert.equal(circlesOverlap(robot, .26, yuragi, actorContactRadius("yuragi")), false);
-  yuragi.x = .72;
+  yuragi.x = .33;
   assert.equal(circlesOverlap(robot, .26, yuragi, actorContactRadius("yuragi")), true);
+});
+
+test("moving actors cannot tunnel through the robot between rendered frames", () => {
+  const robotBefore = { x: 0, z: 0 };
+  const robotAfter = { x: 0, z: .16 };
+  const actorBefore = { x: 0, z: .72 };
+  const actorAfter = { x: 0, z: .38 };
+  assert.equal(sweptCirclesOverlap(robotBefore, robotAfter, .26, actorBefore, actorAfter, .25), true);
+});
+
+test("actor foot collision is wide sideways without stopping early in front", () => {
+  const still = { x: 0, z: 0 };
+  assert.equal(sweptEllipseOverlap(still, still, { x: .53, z: .16 }, { x: .53, z: .16 }, .64, .43, 0), true);
+  assert.equal(sweptEllipseOverlap(still, still, { x: 0, z: .5 }, { x: 0, z: .5 }, .64, .43, 0), false);
 });
 
 test("vacuum only collects hair in front while suction is active", () => {
