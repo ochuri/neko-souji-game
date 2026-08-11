@@ -13,7 +13,7 @@ import {
   stepWanderer,
   sweptEllipseOverlap,
   turnToward,
-} from "./core.js?v=pixel27";
+} from "./core.js?v=pixel29";
 
 const canvas = document.querySelector("#game");
 const ui = {
@@ -116,6 +116,27 @@ let suctionLight = null;
 let hairAtlasTexture = null;
 const projectedActorFoot = new THREE.Vector3();
 const RENDER_SCALE = .55;
+const OUTLINE_COLOR = 0x49313b;
+const toonRamp = new THREE.DataTexture(new Uint8Array([58, 118, 184, 238, 255]), 5, 1, THREE.RedFormat);
+toonRamp.needsUpdate = true;
+toonRamp.magFilter = toonRamp.minFilter = THREE.NearestFilter;
+
+function pixelMaterial({ color = 0xffffff, map = null, side = THREE.FrontSide } = {}) {
+  return new THREE.MeshToonMaterial({ color, map, side, gradientMap: toonRamp });
+}
+
+function addPixelOutline(mesh, threshold = 28, shellScale = 1.012) {
+  const shell = new THREE.Mesh(mesh.geometry, new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR, side: THREE.BackSide }));
+  shell.scale.setScalar(shellScale);
+  shell.renderOrder = -1;
+  mesh.add(shell);
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(mesh.geometry, threshold),
+    new THREE.LineBasicMaterial({ color: OUTLINE_COLOR, transparent: false, opacity: 1 }),
+  );
+  edges.renderOrder = 4;
+  mesh.add(edges);
+}
 
 const HAIR_VARIANTS = [
   { name: "tiny-fluff", frame: 0, scale: [.2, .13], parts: [[0,.065,0,.18,.13]] },
@@ -171,15 +192,14 @@ function makeState() {
 }
 
 function box(w, h, d, color, x, y, z, texture = null) {
-  const material = new THREE.MeshStandardMaterial({ color: texture ? 0xffffff : color, roughness: .82, metalness: 0, map: texture, bumpMap: texture, bumpScale: texture ? .014 : 0 });
+  const material = pixelMaterial({ color: texture ? 0xffffff : color, map: texture });
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
   mesh.position.set(x, y, z);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   world.add(mesh);
   if (Math.max(w, h, d) < 5) {
-    const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x3b2f39, transparent: true, opacity: .5 }));
-    mesh.add(outline);
+    addPixelOutline(mesh, 24, 1.014);
   }
   return mesh;
 }
@@ -206,23 +226,21 @@ function roundedBoxGeometry(w, h, d, radius) {
 
 function roundedBox(w, h, d, radius, color, x, y, z, texture = null) {
   const geometry = roundedBoxGeometry(w, h, d, radius);
-  const material = new THREE.MeshStandardMaterial({ color: texture ? 0xffffff : color, roughness: .8, metalness: 0, map: texture, bumpMap: texture, bumpScale: texture ? .018 : 0 });
+  const material = pixelMaterial({ color: texture ? 0xffffff : color, map: texture });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; world.add(mesh);
-  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 38), new THREE.LineBasicMaterial({ color: 0x3f3140, transparent: true, opacity: .42 }));
-  mesh.add(outline);
+  addPixelOutline(mesh, 24, 1.014);
   return mesh;
 }
 
 function taperedLeg(radiusTop, radiusBottom, height, x, z, texture, color = 0x714737) {
   const geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 16, 1, false);
-  const material = new THREE.MeshStandardMaterial({ color: texture ? 0xffffff : color, map: texture, roughness: .78, metalness: 0 });
+  const material = pixelMaterial({ color: texture ? 0xffffff : color, map: texture });
   const leg = new THREE.Mesh(geometry, material);
   leg.position.set(x, height / 2, z);
   leg.castShadow = true;
   leg.receiveShadow = true;
-  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 42), new THREE.LineBasicMaterial({ color: 0x38272d, transparent: true, opacity: .44 }));
-  leg.add(outline);
+  addPixelOutline(leg, 18, 1.045);
   world.add(leg);
   return leg;
 }
@@ -236,7 +254,8 @@ function pixelTexture(width, height, draw, repeatX = 1, repeatY = 1) {
   const texture = new THREE.CanvasTexture(source);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestMipmapNearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(repeatX, repeatY);
   return texture;
@@ -271,7 +290,7 @@ function buildRoom() {
       g.fillStyle = i % 3 ? "rgba(255,223,192,.12)" : "rgba(72,47,44,.10)"; g.fillRect(x, y, 2 + i % 5, 1);
     }
   }, 3, 4);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(11.2, 15.2), new THREE.MeshPhysicalMaterial({ map: floorTexture, roughness: .55, metalness: .02, clearcoat: .16, clearcoatRoughness: .6 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(11.2, 15.2), pixelMaterial({ map: floorTexture, side: THREE.DoubleSide }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, 0, 4.3);
   floor.receiveShadow = true;
@@ -283,7 +302,7 @@ function buildRoom() {
     g.fillStyle = "rgba(255,245,235,.28)";
     for (let i = 0; i < 24; i += 1) g.fillRect((i * 29) % w, (i * 47) % h, 3, 3);
   }, 2.4, 1.4);
-  const rug = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 3.25), new THREE.MeshStandardMaterial({ map: rugTexture, roughness: 1 }));
+  const rug = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 3.25), pixelMaterial({ map: rugTexture, side: THREE.DoubleSide }));
   rug.rotation.x = -Math.PI / 2; rug.position.set(2.45, .008, 7.5); rug.receiveShadow = true; world.add(rug);
 
   const wallTexture = pixelTexture(96, 96, (g, w, h) => {
@@ -321,7 +340,8 @@ async function buildBackWallArt() {
   const texture = await new THREE.TextureLoader().loadAsync("./public/assets/back-wall-v2.png");
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
   const wallArt = new THREE.Mesh(
     new THREE.PlaneGeometry(11.05, 7.82),
     new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, toneMapped: false })
@@ -335,7 +355,8 @@ async function buildSideWallArt() {
   const texture = await new THREE.TextureLoader().loadAsync("./public/assets/side-wall-v2.png");
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
   const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, toneMapped: false });
   const left = new THREE.Mesh(new THREE.PlaneGeometry(15.0, 7.82), material);
   left.position.set(-5.46, 4, 4.3); left.rotation.y = Math.PI / 2; world.add(left);
@@ -383,7 +404,7 @@ function buildSofa() {
   const armRight = roundedBox(.5, .9, 2.08, .19, 0x9b86a9, 5.05, 1.03, 5.57, fabric);
   const armLeft = roundedBox(.5, .9, 2.08, .19, 0x9b86a9, 1.25, 1.03, 5.57, fabric);
   armLeft.material.color.set(0xebdbee); armRight.material.color.set(0xf0e1f3);
-  const piping = new THREE.MeshStandardMaterial({ color: 0xc8b4d0, roughness: .96 });
+  const piping = pixelMaterial({ color: 0xc8b4d0 });
   const frontSkirt = roundedBox(3.65, .55, .24, .16, 0xa08bab, 3.15, .74, 4.55, fabric);
   frontSkirt.material.color.set(0xe7d7ec);
   for (const x of [2.2, 4.1]) {
@@ -391,12 +412,12 @@ function buildSofa() {
     frontCushion.material.color.set(x < 3 ? 0xf5e8f8 : 0xeee0f2);
   }
   for (const x of [2.15, 4.15]) {
-    const button = new THREE.Mesh(new THREE.SphereGeometry(.045, 10, 6), new THREE.MeshStandardMaterial({ color: 0x766983, roughness: 1 }));
+    const button = new THREE.Mesh(new THREE.SphereGeometry(.045, 8, 5), pixelMaterial({ color: 0x766983 }));
     button.position.set(x, 1.43, 6.26); button.castShadow = true; world.add(button);
   }
   const backCenterSeam = new THREE.Mesh(new THREE.CapsuleGeometry(.013, .82, 3, 6), piping);
   backCenterSeam.position.set(3.15, 1.42, 6.255); backCenterSeam.castShadow = true; world.add(backCenterSeam);
-  const seatCenterSeam = new THREE.Mesh(new THREE.CapsuleGeometry(.009, .18, 3, 6), new THREE.MeshStandardMaterial({ color: 0x94819e, roughness: 1 }));
+  const seatCenterSeam = new THREE.Mesh(new THREE.CapsuleGeometry(.009, .18, 3, 6), pixelMaterial({ color: 0x94819e }));
   seatCenterSeam.position.set(3.15, .83, 4.535); seatCenterSeam.castShadow = true; world.add(seatCenterSeam);
   const legWood = pixelTexture(32, 48, (g, w, h) => {
     g.fillStyle = "#7b5144"; g.fillRect(0, 0, w, h);
@@ -411,14 +432,14 @@ function buildSofa() {
   const backPanelRight = roundedBox(1.78, .74, .055, .16, 0xb6a0c1, 4.14, 1.39, 6.685, fabric);
   backPanelLeft.material.color.set(0xe7d8ec); backPanelRight.material.color.set(0xeee0f2);
   for (const x of [2.16, 4.14]) {
-    const backButton = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 6), new THREE.MeshStandardMaterial({ color: 0x8f7d99, roughness: 1 }));
+    const backButton = new THREE.Mesh(new THREE.SphereGeometry(.035, 8, 5), pixelMaterial({ color: 0x8f7d99 }));
     backButton.position.set(x, 1.39, 6.72); backButton.castShadow = true; world.add(backButton);
   }
   for (const x of [.94, 5.36]) {
     const sidePanel = roundedBox(.14, .7, 1.62, .065, 0xb19abc, x, 1.02, 5.58, fabric);
     sidePanel.material.color.set(0xfff4ff);
     for (const z of [5.3, 5.86]) {
-      const sideButton = new THREE.Mesh(new THREE.SphereGeometry(.024, 10, 6), new THREE.MeshStandardMaterial({ color: 0xcbb8d1, roughness: 1 }));
+      const sideButton = new THREE.Mesh(new THREE.SphereGeometry(.024, 8, 5), pixelMaterial({ color: 0xcbb8d1 }));
       sideButton.position.set(x + (x < 3 ? -.045 : .045), 1.02, z); sideButton.castShadow = true; world.add(sideButton);
     }
   }
@@ -430,7 +451,7 @@ function buildSofa() {
     g.fillStyle = "rgba(241,224,205,.18)";
     for (let y = 14; y < h - 8; y += 13) for (let x = 13; x < w - 8; x += 17) g.fillRect(x, y, 2, 2);
   });
-  const underside = new THREE.Mesh(new THREE.PlaneGeometry(4.0, 2.08), new THREE.MeshStandardMaterial({ map: undersideTexture, side: THREE.DoubleSide, roughness: 1 }));
+  const underside = new THREE.Mesh(new THREE.PlaneGeometry(4.0, 2.08), pixelMaterial({ map: undersideTexture, side: THREE.DoubleSide }));
   underside.rotation.x = -Math.PI / 2; underside.position.set(3.15, .505, 5.65); world.add(underside);
   const frameWood = pixelTexture(48, 24, (g, w, h) => {
     g.fillStyle = "#6b4d43"; g.fillRect(0, 0, w, h);
@@ -460,7 +481,7 @@ function buildTable() {
     g.strokeStyle = "rgba(226,164,108,.25)"; g.lineWidth = 2;
     for (let y = 22; y < h; y += 18) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y - 6); g.stroke(); }
   });
-  const underside = new THREE.Mesh(new THREE.PlaneGeometry(3.9, 2.45), new THREE.MeshStandardMaterial({ map: undersideTexture, side: THREE.DoubleSide, roughness: .88 }));
+  const underside = new THREE.Mesh(new THREE.PlaneGeometry(3.9, 2.45), pixelMaterial({ map: undersideTexture, side: THREE.DoubleSide }));
   underside.rotation.x = -Math.PI / 2; underside.position.set(-2.7, .805, 6.55); world.add(underside);
   buildChair(-4.35, 4.35, 0x987f9f);
   buildChair(-4.0, 8.4, 0xa093ab, Math.PI);
@@ -472,27 +493,27 @@ function buildChair(x, z, color, rotation = 0) {
     g.fillStyle = color === 0x987f9f ? "#a28aad" : "#aaa0b8"; g.fillRect(0, 0, w, h);
     for (let y = 2; y < h; y += 4) for (let x = y % 3; x < w; x += 4) { g.fillStyle = "rgba(255,240,245,.16)"; g.fillRect(x, y, 1, 1); }
   }, 2, 2);
-  const cushionMaterial = new THREE.MeshStandardMaterial({ map: chairFabric, color: 0xffffff, roughness: .9, bumpMap: chairFabric, bumpScale: .012 });
-  const chairWood = new THREE.MeshStandardMaterial({ color: 0x69483e, roughness: .82 });
+  const cushionMaterial = pixelMaterial({ map: chairFabric, color: 0xffffff });
+  const chairWood = pixelMaterial({ color: 0x69483e });
   const addRounded = (w, h, d, radius, px, py, pz, material) => {
     const geometry = roundedBoxGeometry(w, h, d, radius);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(px, py, pz); mesh.castShadow = true; mesh.receiveShadow = true;
-    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 38), new THREE.LineBasicMaterial({ color: 0x3c303b, transparent: true, opacity: .46 })));
+    addPixelOutline(mesh, 22, 1.02);
     group.add(mesh); return mesh;
   };
   addRounded(.88, .14, .92, .08, 0, .56, 0, cushionMaterial);
   for (const px of [-.44, .44]) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .072, .9, 8), chairWood);
     post.position.set(px, .82, .47); post.castShadow = true;
-    post.add(new THREE.LineSegments(new THREE.EdgesGeometry(post.geometry, 24), new THREE.LineBasicMaterial({ color: 0x38272d, transparent: true, opacity: .46 })));
+    addPixelOutline(post, 18, 1.045);
     group.add(post);
   }
   for (const py of [.86, 1.08, 1.28]) addRounded(.8, .075, .09, .03, 0, py, .47, chairWood);
   for (const [px, pz] of [[-.41,-.4],[.41,-.4],[-.41,.4],[.41,.4]]) {
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(.052, .073, .54, 8), chairWood);
     leg.position.set(px, .27, pz); leg.castShadow = true;
-    leg.add(new THREE.LineSegments(new THREE.EdgesGeometry(leg.geometry, 24), new THREE.LineBasicMaterial({ color: 0x38272d, transparent: true, opacity: .46 })));
+    addPixelOutline(leg, 18, 1.045);
     group.add(leg);
   }
   return group;
@@ -507,7 +528,7 @@ function buildDecor() {
     g.fillStyle = "#fff2dd"; g.fillRect(18, 12, 30, 9); g.fillRect(45, 21, 23, 7);
   });
   const makeWallArt = (x, z, rotation) => {
-    const frame = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.12), new THREE.MeshStandardMaterial({ color: 0x7f5b52, roughness: .9, side: THREE.DoubleSide }));
+    const frame = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.12), pixelMaterial({ color: 0x7f5b52, side: THREE.DoubleSide }));
     frame.position.set(x, 1.55, z); frame.rotation.y = rotation; world.add(frame);
     const picture = new THREE.Mesh(new THREE.PlaneGeometry(1.34, .96), new THREE.MeshBasicMaterial({ map: artTexture, side: THREE.DoubleSide }));
     picture.position.set(x + Math.cos(rotation) * .008, 1.55, z - Math.sin(rotation) * .008); picture.rotation.y = rotation; world.add(picture);
@@ -515,10 +536,10 @@ function buildDecor() {
   box(.75, .08, .36, 0xead6c6, 5.22, .63, 2.24);
   const sidePlant = new THREE.Group(); sidePlant.position.set(5.18, .7, 2.24); world.add(sidePlant);
   for (let i = 0; i < 7; i += 1) {
-    const leaf = new THREE.Mesh(new THREE.SphereGeometry(.075, 6, 4), new THREE.MeshStandardMaterial({ color: i % 2 ? 0x748f6c : 0x91a67d, roughness: 1 }));
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(.075, 6, 4), pixelMaterial({ color: i % 2 ? 0x748f6c : 0x91a67d }));
     leaf.scale.set(1.5, .48, .7); leaf.position.set(Math.sin(i * 2.1) * .14, (i % 3) * .1, Math.cos(i) * .08); leaf.rotation.z = i * .7; sidePlant.add(leaf);
   }
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(.15, 8, 6), new THREE.MeshStandardMaterial({ color: 0xd9a0a8, roughness: 1 }));
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(.15, 8, 6), pixelMaterial({ color: 0xd9a0a8 }));
   ball.position.set(-4.75, .15, 11.2); ball.castShadow = true; world.add(ball);
 
   const shelfWood = pixelTexture(48, 48, (g, w, h) => {
@@ -631,7 +652,7 @@ async function buildGameObjects() {
     addHairObject(hair);
   }
   for (const item of vomits) {
-    const mesh = new THREE.Mesh(new THREE.CircleGeometry(item.radius, 12), new THREE.MeshStandardMaterial({ color: 0x777044, roughness: .92, polygonOffset: true, polygonOffsetFactor: -2 }));
+    const mesh = new THREE.Mesh(new THREE.CircleGeometry(item.radius, 12), pixelMaterial({ color: 0x777044, side: THREE.DoubleSide }));
     mesh.rotation.x = -Math.PI / 2; mesh.scale.y = .62; mesh.position.set(item.x, .012, item.z); mesh.receiveShadow = true; world.add(mesh);
   }
 }
@@ -645,8 +666,8 @@ function resize() {
 }
 
 function animationFrame(entity, now) {
-  if (entity.action === "walk") return Math.floor((now * .0135 + entity.seed) % 8);
-  if (entity.action === "crawl") return Math.floor((now * .0145 + entity.seed) % 8);
+  if (entity.action === "walk") return Math.floor((now * .008 + entity.seed) % 8);
+  if (entity.action === "crawl") return Math.floor((now * .009 + entity.seed) % 8);
   if (entity.action === "scratch") {
     const sequence = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1];
     return sequence[Math.floor((now - entity.actionStartedAt) / 92) % sequence.length];
@@ -694,33 +715,26 @@ function syncScene(now, dt) {
     sprite.visible = distance > .16;
     const specWidth = sprite.userData.actionWidth || sprite.scale.x;
     const specHeight = sprite.userData.baseHeight || sprite.scale.y;
-    const renderDistance = distance;
     const renderX = entity.x;
     const renderZ = entity.z;
-    const maxApparentHeight = entity.type === "baby" ? .72 : .9;
-    const nearScale = Math.min(1, renderDistance * maxApparentHeight / specHeight);
     const nearForeground = distance < .65;
     sprite.material.depthTest = !nearForeground;
     sprite.material.depthWrite = !nearForeground;
-    const scratching = now < entity.scratchingUntil;
-    const moving = entity.type === "baby" || entity.action === "walk";
-    const gait = now * (entity.type === "baby" ? .0145 : .0135) + entity.seed;
-    const lift = moving ? Math.abs(Math.sin(gait * Math.PI)) * (entity.type === "baby" ? .018 : .028) : 0;
-    sprite.position.set(renderX, sprite.userData.groundY + lift, renderZ);
+    sprite.position.set(renderX, sprite.userData.groundY, renderZ);
     const travelView = normalizedAngle(entity.angle - Math.atan2(state.player.x - entity.x, state.player.z - entity.z));
     const side = Math.sin(travelView);
     if (sprite.userData.facing === undefined) sprite.userData.facing = side < 0 ? -1 : 1;
     if (side > .22) sprite.userData.facing = 1;
     else if (side < -.22) sprite.userData.facing = -1;
-    sprite.scale.x = sprite.userData.facing * specWidth * nearScale;
-    sprite.scale.y = specHeight * nearScale * (1 - lift * .12);
-    sprite.material.color.set(Math.cos(travelView) < -.2 ? 0xe7ddd8 : 0xfff8f2);
-    sprite.material.rotation = scratching ? Math.sin(now * .024) * .014 : Math.sin(gait) * (entity.type === "baby" ? .008 : .005);
+    sprite.scale.x = sprite.userData.facing * specWidth;
+    sprite.scale.y = specHeight;
+    sprite.material.color.set(0xffffff);
+    sprite.material.rotation = 0;
     const shadow = characterShadows.get(entity.id);
     if (shadow) {
       shadow.position.set(renderX, .025, renderZ - .42);
-      shadow.scale.x = shadow.userData.baseScaleX * (1 - lift * .7);
-      shadow.scale.y = shadow.userData.baseScaleY * (1 - lift * .5);
+      shadow.scale.x = shadow.userData.baseScaleX;
+      shadow.scale.y = shadow.userData.baseScaleY;
       shadow.visible = sprite.visible;
     }
   }
@@ -815,21 +829,21 @@ function update(dt, now) {
         entity.turnAt = now + 650;
       }
     }
-    // A stretching cat is visually much wider than its feet. Let it notice the
-    // approaching robot and shuffle aside before physical contact, without
-    // stopping the robot against an invisible sprite-sized wall.
+    // Characters use a fixed world scale. They notice the robot before their
+    // visible body reaches it and walk aside without creating an invisible wall.
     const avoidDx = entity.x - state.player.x;
     const avoidDz = entity.z - state.player.z;
     const avoidRight = avoidDx * Math.cos(state.player.angle) - avoidDz * Math.sin(state.player.angle);
     const avoidForward = avoidDx * Math.sin(state.player.angle) + avoidDz * Math.cos(state.player.angle);
-    if (entity.action === "stretch" && avoidForward > .2 && avoidForward < 1.35 && Math.abs(avoidRight) < .72) {
+    const avoidanceRange = entity.type === "baby" ? 1.75 : 2.05;
+    if (avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .72) {
       const direction = avoidRight >= 0 ? 1 : -1;
       entity.angle = normalizedAngle(state.player.angle + direction * Math.PI / 2);
       entity.targetAngle = entity.angle;
       entity.turnAt = now + 1800;
       const earlyStep = resolveMovement(entity, {
-        x: entity.x + Math.sin(entity.angle) * dt * 2.6,
-        z: entity.z + Math.cos(entity.angle) * dt * 2.6,
+        x: entity.x + Math.sin(entity.angle) * dt * 2.4,
+        z: entity.z + Math.cos(entity.angle) * dt * 2.4,
       }, actorSolids, actorFurnitureRadius(entity));
       entity.x = earlyStep.x;
       entity.z = earlyStep.z;
@@ -967,10 +981,22 @@ function joystickEnd(event) {
   input.joystickPointer = null; input.x = input.y = 0; ui.stick.style.transform = "translate(0, 0)";
 }
 
+function resetControls() {
+  input.joystickPointer = null;
+  input.x = input.y = 0;
+  keys.clear();
+  ui.stick.style.transform = "translate(0, 0)";
+}
+
 ui.joystick.addEventListener("pointerdown", (event) => { input.joystickPointer = event.pointerId; input.anchorAngle = state.player.angle; ui.joystick.setPointerCapture(event.pointerId); joystickMove(event); });
 ui.joystick.addEventListener("pointermove", joystickMove);
 ui.joystick.addEventListener("pointerup", joystickEnd);
 ui.joystick.addEventListener("pointercancel", joystickEnd);
+ui.joystick.addEventListener("lostpointercapture", resetControls);
+window.addEventListener("pointerup", joystickEnd);
+window.addEventListener("pointercancel", resetControls);
+window.addEventListener("blur", resetControls);
+document.addEventListener("visibilitychange", () => { if (document.hidden) resetControls(); });
 window.addEventListener("keydown", (event) => { keys.add(event.key.length === 1 ? event.key.toLowerCase() : event.key); if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(event.key)) event.preventDefault(); });
 window.addEventListener("keyup", (event) => keys.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key));
 window.addEventListener("resize", resize);
