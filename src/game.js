@@ -13,7 +13,7 @@ import {
   stepWanderer,
   sweptEllipseOverlap,
   turnToward,
-} from "./core.js?v=pixel64";
+} from "./core.js?v=pixel66";
 
 const canvas = document.querySelector("#game");
 const ui = {
@@ -124,6 +124,9 @@ const bgm = new Audio("./public/assets/audio/nekoge_loopA.wav");
 bgm.loop = true;
 bgm.preload = "auto";
 bgm.volume = .16;
+const vacuumSfx = new Audio("./public/assets/audio/vacuum_1s.wav");
+vacuumSfx.preload = "auto";
+vacuumSfx.volume = 1;
 const SFX_LEVEL = 3;
 let lastVacuumSoundAt = 0;
 let vacuumWhooshCount = 0;
@@ -880,13 +883,12 @@ function syncScene(now, dt) {
     const renderX = entity.x;
     const renderZ = entity.z;
     const nearForeground = distance < .65;
-    // The baby is constrained to the open lane in front of the furniture.
-    // Render it there as a foreground actor so chair rails can never slice its
-    // face just because a transparent billboard intersects a depth edge.
-    const foregroundActor = entity.type === "baby" || nearForeground;
+    // Preserve real room depth: a distant actor must be occluded by a sofa or
+    // table that is physically closer to the camera.
+    const foregroundActor = nearForeground;
     sprite.material.depthTest = !foregroundActor;
     sprite.material.depthWrite = !foregroundActor;
-    sprite.renderOrder = entity.type === "baby" ? 5 : 2;
+    sprite.renderOrder = 2;
     sprite.position.set(renderX, sprite.userData.groundY, renderZ);
     const travelView = normalizedAngle(entity.angle - Math.atan2(state.player.x - entity.x, state.player.z - entity.z));
     const side = Math.sin(travelView);
@@ -1130,6 +1132,7 @@ function update(dt, now) {
 function startGame() {
   state = makeState();
   vacuumWhooshCount = 0; lastVacuumSoundAt = 0; canvas.dataset.vacuumWhooshes = "0";
+  vacuumSfx.pause(); vacuumSfx.currentTime = 0; canvas.dataset.vacuumSound = "ready";
   input.x = 0; input.y = 0; input.suction = false; input.anchorAngle = state.player.angle;
   visual.x = state.player.x; visual.z = state.player.z; visual.angle = state.player.angle; visual.pitch = .025;
   for (const [id, object] of hairObjects) {
@@ -1164,6 +1167,7 @@ function finish(hitHazard) {
   if (state.mode !== "playing") return;
   state.mode = "result"; input.suction = false;
   bgm.pause();
+  vacuumSfx.pause(); vacuumSfx.currentTime = 0;
   canvas.dataset.bgm = "paused";
   ui.controls.hidden = true; ui.robot.hidden = true; ui.result.hidden = false;
   ui.suctionFx.classList.remove("active");
@@ -1210,37 +1214,13 @@ function tone({ from, to = from, duration = .12, gainValue = .04, type = "sine",
 }
 
 function vacuumWhooshSound() {
-  canvas.dataset.lastSound = "vacuum-whoosh";
+  if (!vacuumSfx.paused && !vacuumSfx.ended) return;
+  vacuumSfx.currentTime = 0;
   vacuumWhooshCount += 1;
   canvas.dataset.vacuumWhooshes = vacuumWhooshCount.toString();
-  if (!audio || audio.state !== "running") return;
-  const start = audio.currentTime;
-  const duration = .38;
-  const motor = audio.createOscillator();
-  const motorGain = audio.createGain();
-  motor.type = "sawtooth";
-  motor.frequency.setValueAtTime(92, start);
-  motor.frequency.exponentialRampToValueAtTime(58, start + duration);
-  motorGain.gain.setValueAtTime(.0001, start);
-  motorGain.gain.exponentialRampToValueAtTime(.045 * SFX_LEVEL, start + .025);
-  motorGain.gain.exponentialRampToValueAtTime(.0001, start + duration);
-  motor.connect(motorGain).connect(audio.destination);
-
-  const frames = Math.ceil(audio.sampleRate * duration);
-  const noiseBuffer = audio.createBuffer(1, frames, audio.sampleRate);
-  const samples = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < frames; i += 1) samples[i] = (Math.random() * 2 - 1) * (1 - i / frames * .35);
-  const noise = audio.createBufferSource();
-  const filter = audio.createBiquadFilter();
-  const noiseGain = audio.createGain();
-  noise.buffer = noiseBuffer;
-  filter.type = "bandpass"; filter.frequency.value = 540; filter.Q.value = .7;
-  noiseGain.gain.setValueAtTime(.0001, start);
-  noiseGain.gain.exponentialRampToValueAtTime(.06 * SFX_LEVEL, start + .018);
-  noiseGain.gain.exponentialRampToValueAtTime(.0001, start + duration);
-  noise.connect(filter).connect(noiseGain).connect(audio.destination);
-  motor.start(start); motor.stop(start + duration + .01);
-  noise.start(start); noise.stop(start + duration + .01);
+  canvas.dataset.lastSound = "vacuum-sample";
+  vacuumSfx.play().then(() => { canvas.dataset.vacuumSound = "playing"; })
+    .catch(() => { canvas.dataset.vacuumSound = "waiting-for-touch"; });
 }
 
 function pickupSound() {
