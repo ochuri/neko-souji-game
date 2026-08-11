@@ -112,14 +112,15 @@ export function createDroppedHair(entity, id) {
 export function stepWanderer(entity, dt, now, room = ROOM) {
   if (now >= entity.turnAt) {
     const phase = Math.sin(now * 0.001 + entity.seed * 4.13);
-    entity.angle = normalizedAngle(entity.angle + phase * 1.8 + 0.55);
+    entity.targetAngle = normalizedAngle(entity.angle + phase * 1.8 + 0.55);
     entity.turnAt = now + 1150 + (entity.seed % 5) * 210;
   }
+  entity.angle = turnToward(entity.angle, entity.targetAngle ?? entity.angle, dt * 2.4);
   const speed = entity.speed * dt;
   entity.x += Math.sin(entity.angle) * speed;
   entity.z += Math.cos(entity.angle) * speed;
-  if (entity.x < room.minX + .8 || entity.x > room.maxX - .8) entity.angle *= -1;
-  if (entity.z < room.minZ + 1.2 || entity.z > room.maxZ - .8) entity.angle = Math.PI - entity.angle;
+  if (entity.x < room.minX + .8 || entity.x > room.maxX - .8) entity.targetAngle = normalizedAngle(-entity.angle);
+  if (entity.z < room.minZ + 1.2 || entity.z > room.maxZ - .8) entity.targetAngle = normalizedAngle(Math.PI - entity.angle);
   entity.x = clamp(entity.x, room.minX + .75, room.maxX - .75);
   entity.z = clamp(entity.z, room.minZ + 1.1, room.maxZ - .75);
   return entity;

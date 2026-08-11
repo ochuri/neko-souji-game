@@ -103,10 +103,6 @@ const hairShadows = new Map();
 const characterObjects = new Map();
 const characterShadows = new Map();
 const characterAnimationTextures = new Map();
-const furnitureMeshes = { sofa: [], table: [] };
-const furnitureFacades = { sofa: null, table: null };
-const sofaShellLegs = [];
-const tableShellParts = [];
 const keys = new Set();
 const input = { x: 0, y: 0, suction: false, joystickPointer: null, anchorAngle: 0 };
 const visual = { x: 0, z: 0, angle: 0, pitch: .025 };
@@ -119,11 +115,11 @@ let suctionLight = null;
 let hairAtlasTexture = null;
 
 const HAIR_VARIANTS = [
-  { name: "tiny-scatter", frame: 0, scale: [.32, .16] },
-  { name: "round-fluff", frame: 1, scale: [.26, .18] },
-  { name: "big-fluff-pile", frame: 2, scale: [.44, .22] },
-  { name: "twin-puffs", frame: 4, scale: [.4, .18] },
-  { name: "little-pair", frame: 6, scale: [.28, .14] },
+  { name: "tiny-fluff", frame: 0, scale: [.2, .13], parts: [[0,.065,0,.18,.13]] },
+  { name: "round-fluff", frame: 1, scale: [.27, .18], parts: [[0,.085,0,.25,.18]] },
+  { name: "soft-pair", frame: 2, scale: [.36, .17], parts: [[-.085,.07,0,.18,.13],[.085,.065,.012,.17,.12]] },
+  { name: "big-airy-fluff", frame: 3, scale: [.37, .23], parts: [[0,.11,0,.34,.23]] },
+  { name: "asymmetric-cluster", frame: 4, scale: [.4, .2], parts: [[-.055,.09,0,.24,.17],[.125,.055,.015,.16,.11]] },
 ];
 
 function playerActorRadius(entity) {
@@ -170,7 +166,7 @@ function box(w, h, d, color, x, y, z, texture = null) {
   return mesh;
 }
 
-function roundedBox(w, h, d, radius, color, x, y, z, texture = null) {
+function roundedBoxGeometry(w, h, d, radius) {
   const r = Math.min(radius, w / 2, h / 2);
   const shape = new THREE.Shape();
   shape.moveTo(-w / 2 + r, -h / 2);
@@ -182,17 +178,35 @@ function roundedBox(w, h, d, radius, color, x, y, z, texture = null) {
     depth: d,
     bevelEnabled: true,
     bevelSegments: 3,
-    bevelSize: Math.min(.045, r * .35),
-    bevelThickness: .035,
-    curveSegments: 5,
+    bevelSize: Math.min(.085, r * .55),
+    bevelThickness: Math.min(.075, d * .16),
+    curveSegments: 8,
   });
   geometry.translate(0, 0, -d / 2);
+  return geometry;
+}
+
+function roundedBox(w, h, d, radius, color, x, y, z, texture = null) {
+  const geometry = roundedBoxGeometry(w, h, d, radius);
   const material = new THREE.MeshStandardMaterial({ color: texture ? 0xffffff : color, roughness: .8, metalness: 0, map: texture, bumpMap: texture, bumpScale: texture ? .018 : 0 });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; world.add(mesh);
-  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 28), new THREE.LineBasicMaterial({ color: 0x604b52, transparent: true, opacity: .2 }));
+  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 38), new THREE.LineBasicMaterial({ color: 0x604b52, transparent: true, opacity: .045 }));
   mesh.add(outline);
   return mesh;
+}
+
+function taperedLeg(radiusTop, radiusBottom, height, x, z, texture, color = 0x714737) {
+  const geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 16, 1, false);
+  const material = new THREE.MeshStandardMaterial({ color: texture ? 0xffffff : color, map: texture, roughness: .78, metalness: 0 });
+  const leg = new THREE.Mesh(geometry, material);
+  leg.position.set(x, height / 2, z);
+  leg.castShadow = true;
+  leg.receiveShadow = true;
+  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 42), new THREE.LineBasicMaterial({ color: 0x4d3030, transparent: true, opacity: .08 }));
+  leg.add(outline);
+  world.add(leg);
+  return leg;
 }
 
 function pixelTexture(width, height, draw, repeatX = 1, repeatY = 1) {
@@ -313,72 +327,6 @@ async function buildSideWallArt() {
   front.position.set(0, 4, -3.08); world.add(front);
 }
 
-async function buildSofaFacade() {
-  const texture = await new THREE.TextureLoader().loadAsync("./public/assets/sofa-facade-cropped-v2.png");
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  const facade = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.45, 2.49),
-    new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: .04, side: THREE.FrontSide, toneMapped: false }),
-  );
-  facade.position.set(3.15, 1.22, 4.45);
-  facade.rotation.y = Math.PI;
-  facade.renderOrder = 2;
-  world.add(facade);
-  furnitureFacades.sofa = facade;
-
-  const tableTexture = await new THREE.TextureLoader().loadAsync("./public/assets/table-facade-cropped-v2.png");
-  tableTexture.colorSpace = THREE.SRGBColorSpace;
-  tableTexture.magFilter = THREE.NearestFilter;
-  tableTexture.minFilter = THREE.LinearMipmapLinearFilter;
-  const tableFacade = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.15, 2.46),
-    new THREE.MeshBasicMaterial({ map: tableTexture, transparent: true, alphaTest: .04, side: THREE.FrontSide, toneMapped: false }),
-  );
-  tableFacade.position.set(-2.7, 1.23, 5.18);
-  tableFacade.rotation.y = Math.PI;
-  tableFacade.renderOrder = 2;
-  world.add(tableFacade);
-  furnitureFacades.table = tableFacade;
-
-  const shellWood = pixelTexture(32, 48, (g, w, h) => {
-    g.fillStyle = "#7b5144"; g.fillRect(0, 0, w, h);
-    for (let y = 4; y < h; y += 8) { g.fillStyle = "rgba(244,184,136,.2)"; g.fillRect(0, y, w, 1); }
-  }, 1, 2);
-  const sofaLegMaterial = new THREE.MeshStandardMaterial({ map: shellWood, color: 0xffffff, roughness: .84 });
-  for (const [x, z] of [[4.82,6.6],[1.48,6.6]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.1, .12, .46, 8), sofaLegMaterial);
-    leg.position.set(x, .23, z); leg.castShadow = true; world.add(leg); sofaShellLegs.push(leg);
-  }
-  const sofaUnderTexture = pixelTexture(32, 32, (g, w, h) => {
-    g.fillStyle = "#82788d"; g.fillRect(0, 0, w, h);
-    for (let y = 2; y < h; y += 4) { g.fillStyle = "rgba(242,220,219,.19)"; g.fillRect(0, y, w, 1); }
-    for (let x = 3; x < w; x += 5) { g.fillStyle = "rgba(73,58,75,.18)"; g.fillRect(x, 0, 1, h); }
-  }, 7, 5);
-  const sofaUnder = new THREE.Mesh(new THREE.PlaneGeometry(4.02, 2), new THREE.MeshBasicMaterial({ map: sofaUnderTexture, color: 0xffffff, side: THREE.DoubleSide, toneMapped: false }));
-  sofaUnder.rotation.x = -Math.PI / 2; sofaUnder.position.set(3.15, .49, 5.55); world.add(sofaUnder); sofaShellLegs.push(sofaUnder);
-  for (const z of [4.7, 5.55, 6.4]) {
-    const beam = box(3.82, .065, .11, 0x725044, 3.15, .455, z, shellWood);
-    sofaShellLegs.push(beam);
-  }
-
-  const shellTableWood = pixelTexture(64, 64, (g, w, h) => {
-    g.fillStyle = "#865a43"; g.fillRect(0, 0, w, h);
-    for (let y = 5; y < h; y += 10) { g.fillStyle = "rgba(246,184,125,.18)"; g.fillRect(0, y, w, 2); }
-  }, 3, 2);
-  tableShellParts.push(roundedBox(4.1, .2, 2.65, .07, 0x865a43, -2.7, 1, 6.55, shellTableWood));
-  const tableLegMaterial = new THREE.MeshStandardMaterial({ map: shellTableWood, color: 0xffffff, roughness: .82 });
-  for (const [x, z] of [[-.95,5.5],[-4.45,5.5],[-.95,7.6],[-4.45,7.6]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.1, .12, .92, 8), tableLegMaterial);
-    leg.position.set(x, .46, z); leg.castShadow = true; world.add(leg); tableShellParts.push(leg);
-  }
-  const tableUnder = new THREE.Mesh(new THREE.PlaneGeometry(3.9, 2.45), new THREE.MeshStandardMaterial({ color: 0x624033, roughness: .9, side: THREE.DoubleSide }));
-  tableUnder.rotation.x = -Math.PI / 2; tableUnder.position.set(-2.7, .89, 6.55); world.add(tableUnder); tableShellParts.push(tableUnder);
-  tableShellParts.push(buildChair(-3.9, 4.6, 0x987f9f));
-  tableShellParts.push(buildChair(-4, 8.4, 0xa093ab, Math.PI));
-}
-
 function buildCollisionGuides() {
   const wood = pixelTexture(32, 64, (g, w, h) => {
     g.fillStyle = "#76513f"; g.fillRect(0, 0, w, h);
@@ -395,43 +343,67 @@ function buildCollisionGuides() {
 }
 
 function buildSofa() {
-  const childStart = world.children.length;
-  const fabric = pixelTexture(64, 64, (g, w, h) => {
-    g.fillStyle = "#9c8eae"; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 180; i += 1) { g.fillStyle = i % 3 ? "rgba(255,244,249,.12)" : "rgba(52,41,65,.11)"; g.fillRect((i * 17) % w, (i * 31) % h, 1, 2); }
-  }, 3, 2);
-  roundedBox(4.18, .24, 2.24, .1, 0x877a98, 3.15, .64, 5.65, fabric);
-  roundedBox(1.92, .42, 2.02, .16, 0xb1a5bc, 4.18, .95, 5.57, fabric);
-  roundedBox(1.92, .42, 2.02, .16, 0xa89bb6, 2.12, .95, 5.57, fabric);
-  roundedBox(4.35, 1.18, .34, .14, 0x8f819f, 3.15, 1.5, 6.66, fabric);
-  roundedBox(.35, .72, 2.2, .14, 0x8f819f, 5.12, 1.21, 5.65, fabric);
-  roundedBox(.35, .72, 2.2, .14, 0x8f819f, 1.18, 1.21, 5.65, fabric);
-  roundedBox(1.82, .18, 1.8, .08, 0xb3a7be, 4.18, 1.29, 5.57, fabric);
-  roundedBox(1.82, .18, 1.8, .08, 0xaa9db8, 2.12, 1.29, 5.57, fabric);
-  const piping = new THREE.MeshStandardMaterial({ color: 0xd8ccdc, roughness: .92 });
-  for (const x of [2.12, 4.18]) {
-    const seam = new THREE.Mesh(new THREE.BoxGeometry(1.7, .026, .026), piping);
-    seam.position.set(x, 1.33, 4.55); seam.castShadow = true; world.add(seam);
+  const fabric = pixelTexture(96, 96, (g, w, h) => {
+    g.fillStyle = "#ae99b9"; g.fillRect(0, 0, w, h);
+    for (let y = 3; y < h; y += 6) {
+      for (let x = (y % 12) / 2; x < w; x += 6) {
+        g.fillStyle = (x + y) % 12 ? "rgba(255,245,250,.24)" : "rgba(69,52,79,.18)";
+        g.fillRect(x, y, (x + y) % 18 ? 1 : 2, 1);
+        if ((x * 3 + y) % 24 === 0) g.fillRect(x + 1, y + 1, 1, 1);
+      }
+    }
+  }, 1.25, 1.25);
+  const sofaBase = roundedBox(4.16, .34, 2.16, .12, 0x877a98, 3.15, .66, 5.62, fabric);
+  const seatRight = roundedBox(1.9, .3, 1.92, .17, 0xb1a5bc, 4.15, .93, 5.52, fabric);
+  const seatLeft = roundedBox(1.9, .3, 1.92, .17, 0xa89bb6, 2.15, .93, 5.52, fabric);
+  const backLeft = roundedBox(1.91, 1.08, .38, .19, 0xa28daf, 2.15, 1.38, 6.47, fabric);
+  const backRight = roundedBox(1.91, 1.08, .38, .19, 0xab96b8, 4.15, 1.38, 6.47, fabric);
+  sofaBase.material.color.set(0xdfcfe5);
+  seatLeft.material.color.set(0xfff8ff); seatRight.material.color.set(0xfbf1fd);
+  backLeft.material.color.set(0xf0e1f4); backRight.material.color.set(0xf6e9f8);
+  backLeft.rotation.x = backRight.rotation.x = -.055;
+  const armRight = roundedBox(.5, .9, 2.08, .19, 0x9b86a9, 5.05, 1.03, 5.57, fabric);
+  const armLeft = roundedBox(.5, .9, 2.08, .19, 0x9b86a9, 1.25, 1.03, 5.57, fabric);
+  armLeft.material.color.set(0xebdbee); armRight.material.color.set(0xf0e1f3);
+  const piping = new THREE.MeshStandardMaterial({ color: 0xc8b4d0, roughness: .96 });
+  const frontSkirt = roundedBox(3.65, .55, .24, .16, 0xa08bab, 3.15, .74, 4.55, fabric);
+  frontSkirt.material.color.set(0xe7d7ec);
+  for (const x of [2.2, 4.1]) {
+    const frontCushion = roundedBox(1.7, .4, .14, .16, 0xb19abc, x, .8, 4.36, fabric);
+    frontCushion.material.color.set(x < 3 ? 0xf5e8f8 : 0xeee0f2);
   }
-  const centerSeam = new THREE.Mesh(new THREE.BoxGeometry(.028, .28, .028), piping);
-  centerSeam.position.set(3.15, .99, 4.54); world.add(centerSeam);
-  for (const x of [2.12, 3.15, 4.18]) {
-    const button = new THREE.Mesh(new THREE.SphereGeometry(.045, 8, 5), new THREE.MeshStandardMaterial({ color: 0x766983, roughness: 1 }));
-    button.position.set(x, 1.54, 6.47); world.add(button);
+  for (const x of [2.15, 4.15]) {
+    const button = new THREE.Mesh(new THREE.SphereGeometry(.045, 10, 6), new THREE.MeshStandardMaterial({ color: 0x766983, roughness: 1 }));
+    button.position.set(x, 1.43, 6.26); button.castShadow = true; world.add(button);
   }
+  const backCenterSeam = new THREE.Mesh(new THREE.CapsuleGeometry(.013, .82, 3, 6), piping);
+  backCenterSeam.position.set(3.15, 1.42, 6.255); backCenterSeam.castShadow = true; world.add(backCenterSeam);
+  const seatCenterSeam = new THREE.Mesh(new THREE.CapsuleGeometry(.009, .18, 3, 6), new THREE.MeshStandardMaterial({ color: 0x94819e, roughness: 1 }));
+  seatCenterSeam.position.set(3.15, .83, 4.535); seatCenterSeam.castShadow = true; world.add(seatCenterSeam);
   const legWood = pixelTexture(32, 48, (g, w, h) => {
     g.fillStyle = "#7b5144"; g.fillRect(0, 0, w, h);
-    for (let y = 4; y < h; y += 8) { g.fillStyle = "rgba(244,184,136,.2)"; g.fillRect(0, y, w, 1); }
-    g.fillStyle = "rgba(54,34,37,.2)"; g.fillRect(4, 0, 3, h); g.fillRect(w - 7, 0, 2, h);
+    for (let i = 0; i < 12; i += 1) {
+      g.fillStyle = i % 3 ? "rgba(244,184,136,.18)" : "rgba(54,34,37,.16)";
+      g.fillRect((i * 11) % w, (i * 17) % h, 1, 7 + i % 11);
+    }
   }, 1, 2);
-  for (const [x, z] of [[4.82,4.7],[1.48,4.7],[4.82,6.6],[1.48,6.6]]) roundedBox(.22, .48, .22, .055, 0x7b5144, x, .24, z, legWood);
-  const pillow = roundedBox(.82, .56, .18, .14, 0xd3a1a8, 4.25, 1.64, 6.39); pillow.rotation.z = .14;
-  const blanket = pixelTexture(48, 72, (g, w, h) => {
-    g.fillStyle = "#ead6c2"; g.fillRect(0, 0, w, h);
-    for (let y = 6; y < h; y += 12) { g.fillStyle = "rgba(179,137,130,.22)"; g.fillRect(0, y, w, 2); }
-    for (let x = 5; x < w; x += 9) { g.fillStyle = "rgba(255,247,231,.25)"; g.fillRect(x, 0, 2, h); }
-  }, 1, 1);
-  box(.74, .7, .06, 0xead6c2, 3.76, .92, 4.52, blanket);
+  for (const [x, z] of [[4.82,4.72],[1.48,4.72],[4.82,6.48],[1.48,6.48]]) taperedLeg(.068, .038, .48, x, z, legWood, 0x7b5144);
+  const pillow = roundedBox(.76, .54, .17, .15, 0xd3a1a8, 4.28, 1.31, 6.22); pillow.rotation.z = .16; pillow.rotation.x = -.12;
+  const backPanelLeft = roundedBox(1.78, .74, .055, .16, 0xad98b9, 2.16, 1.39, 6.685, fabric);
+  const backPanelRight = roundedBox(1.78, .74, .055, .16, 0xb6a0c1, 4.14, 1.39, 6.685, fabric);
+  backPanelLeft.material.color.set(0xe7d8ec); backPanelRight.material.color.set(0xeee0f2);
+  for (const x of [2.16, 4.14]) {
+    const backButton = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 6), new THREE.MeshStandardMaterial({ color: 0x8f7d99, roughness: 1 }));
+    backButton.position.set(x, 1.39, 6.72); backButton.castShadow = true; world.add(backButton);
+  }
+  for (const x of [.94, 5.36]) {
+    const sidePanel = roundedBox(.14, .7, 1.62, .065, 0xb19abc, x, 1.02, 5.58, fabric);
+    sidePanel.material.color.set(0xfff4ff);
+    for (const z of [5.3, 5.86]) {
+      const sideButton = new THREE.Mesh(new THREE.SphereGeometry(.024, 10, 6), new THREE.MeshStandardMaterial({ color: 0xcbb8d1, roughness: 1 }));
+      sideButton.position.set(x + (x < 3 ? -.045 : .045), 1.02, z); sideButton.castShadow = true; world.add(sideButton);
+    }
+  }
   const undersideTexture = pixelTexture(128, 80, (g, w, h) => {
     g.fillStyle = "#3f354d"; g.fillRect(0, 0, w, h);
     g.fillStyle = "#644b45"; g.fillRect(0, 0, w, 8); g.fillRect(0, h - 8, w, 8); g.fillRect(0, 0, 8, h); g.fillRect(w - 8, 0, 8, h);
@@ -447,18 +419,22 @@ function buildSofa() {
     for (let y = 3; y < h; y += 6) { g.fillStyle = "rgba(237,180,132,.22)"; g.fillRect(0, y, w, 1); }
   }, 3, 1);
   for (const z of [4.78, 5.65, 6.5]) roundedBox(3.82, .095, .14, .035, 0x6b4d43, 3.15, .465, z, frameWood);
-  furnitureMeshes.sofa.push(...world.children.slice(childStart));
 }
 
 function buildTable() {
-  const childStart = world.children.length;
   const wood = pixelTexture(64, 64, (g, w, h) => {
-    g.fillStyle = "#825b48"; g.fillRect(0, 0, w, h);
-    for (let y = 5; y < h; y += 11) { g.fillStyle = "rgba(244,188,132,.15)"; g.fillRect(0, y, w, 2); }
-    for (let i = 0; i < 16; i += 1) { g.fillStyle = "rgba(67,39,36,.16)"; g.fillRect((i * 23) % w, (i * 37) % h, 13, 1); }
-  }, 3, 2);
-  roundedBox(4.1, .18, 2.65, .07, 0x825b48, -2.7, 1.0, 6.55, wood);
-  for (const [x, z] of [[-.95,5.5],[-4.45,5.5],[-.95,7.6],[-4.45,7.6]]) box(.26, .92, .26, 0x654535, x, .46, z, wood);
+    g.fillStyle = "#a86d48"; g.fillRect(0, 0, w, h);
+    g.fillStyle = "rgba(255,217,166,.13)"; g.fillRect(0, 0, w, 8);
+    for (let i = 0; i < 22; i += 1) {
+      g.fillStyle = i % 3 ? "rgba(255,211,157,.24)" : "rgba(70,38,27,.22)";
+      g.fillRect((i * 29) % w, (i * 17) % h, 6 + i % 9, i % 4 === 0 ? 2 : 1);
+    }
+  }, 1.25, 1);
+  const tableTop = roundedBox(4.16, .15, 2.7, .075, 0x8f583b, -2.7, .99, 6.55, wood);
+  tableTop.material.roughness = .5; tableTop.material.metalness = .025;
+  const tableFace = roundedBox(3.76, .18, .11, .045, 0x9d6847, -2.7, .86, 5.25, wood);
+  tableFace.material.color.set(0xf1c193); tableFace.material.roughness = .56;
+  for (const [x, z] of [[-.95,5.5],[-4.45,5.5],[-.95,7.6],[-4.45,7.6]]) taperedLeg(.115, .062, .95, x, z, wood, 0x654535);
   const undersideTexture = pixelTexture(128, 80, (g, w, h) => {
     g.fillStyle = "#58372d"; g.fillRect(0, 0, w, h);
     for (let x = 0; x < w; x += 22) { g.fillStyle = x % 44 ? "#684335" : "#4e3028"; g.fillRect(x, 0, 20, h); }
@@ -467,22 +443,34 @@ function buildTable() {
     for (let y = 22; y < h; y += 18) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y - 6); g.stroke(); }
   });
   const underside = new THREE.Mesh(new THREE.PlaneGeometry(3.9, 2.45), new THREE.MeshStandardMaterial({ map: undersideTexture, side: THREE.DoubleSide, roughness: .88 }));
-  underside.rotation.x = -Math.PI / 2; underside.position.set(-2.7, .895, 6.55); world.add(underside);
-  buildChair(-3.9, 4.6, 0x987f9f);
+  underside.rotation.x = -Math.PI / 2; underside.position.set(-2.7, .805, 6.55); world.add(underside);
+  buildChair(-4.35, 4.35, 0x987f9f);
   buildChair(-4.0, 8.4, 0xa093ab, Math.PI);
-  furnitureMeshes.table.push(...world.children.slice(childStart));
 }
 
 function buildChair(x, z, color, rotation = 0) {
   const group = new THREE.Group(); group.position.set(x, 0, z); group.rotation.y = rotation; world.add(group);
-  const add = (w, h, d, px, py, pz, shade = color) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color: shade, roughness: .88 }));
+  const chairFabric = pixelTexture(32, 32, (g, w, h) => {
+    g.fillStyle = color === 0x987f9f ? "#a28aad" : "#aaa0b8"; g.fillRect(0, 0, w, h);
+    for (let y = 2; y < h; y += 4) for (let x = y % 3; x < w; x += 4) { g.fillStyle = "rgba(255,240,245,.16)"; g.fillRect(x, y, 1, 1); }
+  }, 2, 2);
+  const cushionMaterial = new THREE.MeshStandardMaterial({ map: chairFabric, color: 0xffffff, roughness: .9, bumpMap: chairFabric, bumpScale: .012 });
+  const chairWood = new THREE.MeshStandardMaterial({ color: 0x69483e, roughness: .82 });
+  const addRounded = (w, h, d, radius, px, py, pz, material) => {
+    const geometry = roundedBoxGeometry(w, h, d, radius);
+    const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(px, py, pz); mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); return mesh;
   };
-  for (let i = 0; i < 4; i += 1) add(.22, .12, 1.08, -.39 + i * .26, .58, 0, i % 2 ? color : color - 0x080508);
-  add(.82, .13, .12, 0, .93, .5, color);
-  add(.82, .13, .12, 0, 1.17, .5, color);
-  for (const [px, pz] of [[-.43,-.43],[.43,-.43],[-.43,.43],[.43,.43]]) add(.16, .58, .16, px, .29, pz, 0x5e4950);
+  addRounded(.88, .14, .92, .08, 0, .56, 0, cushionMaterial);
+  for (const px of [-.44, .44]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.055, .072, .9, 8), chairWood);
+    post.position.set(px, .82, .47); post.castShadow = true; group.add(post);
+  }
+  for (const py of [.86, 1.08, 1.28]) addRounded(.8, .075, .09, .03, 0, py, .47, chairWood);
+  for (const [px, pz] of [[-.41,-.4],[.41,-.4],[-.41,.4],[.41,.4]]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.052, .073, .54, 8), chairWood);
+    leg.position.set(px, .27, pz); leg.castShadow = true; group.add(leg);
+  }
   return group;
 }
 
@@ -529,32 +517,31 @@ function createRobotBody() {
 function addHairObject(hair) {
   if (!hairAtlasTexture) return null;
   const variant = HAIR_VARIANTS[hair.dropped ? 1 : hair.id % HAIR_VARIANTS.length];
-  const map = hairAtlasTexture.clone();
-  map.repeat.set(.25, .5);
-  map.offset.set((variant.frame % 4) * .25, variant.frame < 4 ? .5 : 0);
-  map.needsUpdate = true;
-  const material = new THREE.SpriteMaterial({ map, transparent: true, opacity: .88, depthWrite: false, alphaTest: .06, toneMapped: false });
-  const warmTone = hair.id % 3 === 0 ? 0xf4e7df : 0xfff5eb;
-  const grayTone = hair.id % 3 === 0 ? 0xd8cec8 : 0xe6ddd6;
-  material.color.set(hair.cat === "yuragi" ? warmTone : grayTone);
-  const sprite = new THREE.Sprite(material);
+  const group = new THREE.Group();
   const [width, height] = variant.scale;
-  sprite.scale.set(hair.id % 2 ? -width : width, height, 1);
-  sprite.center.set(.5, .09);
-  sprite.position.set(hair.x, .012, hair.z);
-  sprite.userData.kind = variant.name;
-  sprite.userData.hairFrame = variant.frame;
-  world.add(sprite); hairObjects.set(hair.id, sprite);
+  for (const [x, y, z, partWidth, partHeight] of variant.parts) {
+    const material = new THREE.SpriteMaterial({ map: hairAtlasTexture, transparent: true, opacity: 1, depthWrite: false, alphaTest: .01, toneMapped: false });
+    material.color.set(hair.cat === "yuragi" ? 0xfff7ef : 0xf0e8e3);
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(hair.id % 2 ? -partWidth : partWidth, partHeight, 1);
+    sprite.center.set(.5, .06);
+    sprite.position.set(hair.id % 2 ? -x : x, y, z);
+    group.add(sprite);
+  }
+  group.position.set(hair.x, .006, hair.z);
+  group.userData.kind = variant.name;
+  group.userData.hairFrame = variant.frame;
+  world.add(group); hairObjects.set(hair.id, group);
 
   const shadow = new THREE.Mesh(
     new THREE.CircleGeometry(.5, 20),
     new THREE.MeshBasicMaterial({ color: 0x574a59, transparent: true, opacity: .065, depthWrite: false, toneMapped: false }),
   );
   shadow.rotation.x = -Math.PI / 2;
-  shadow.scale.set(width * .58, Math.max(.05, height * .34), 1);
+  shadow.scale.set(width * .72, Math.max(.055, height * .32), 1);
   shadow.position.set(hair.x, .004, hair.z);
   world.add(shadow); hairShadows.set(hair.id, shadow);
-  return sprite;
+  return group;
 }
 
 async function buildGameObjects() {
@@ -564,7 +551,7 @@ async function buildGameObjects() {
   );
   const loaded = await Promise.all([
     ...animationEntries.map(({ path }) => loader.loadAsync(path)),
-    loader.loadAsync("./public/assets/animation/hair-collectibles-v3-normalized.png"),
+    loader.loadAsync("./public/assets/animation/hair-canonical-tuft-v3.png"),
   ]);
   const hairAtlas = loaded.pop();
   animationEntries.forEach(({ type, action }, index) => {
@@ -584,9 +571,9 @@ async function buildGameObjects() {
   hairAtlas.generateMipmaps = false;
   hairAtlasTexture = hairAtlas;
   const specs = {
-    kotaro: { height: 1.85, groundY: -.12 },
-    yuragi: { height: 2, groundY: -.14 },
-    baby: { height: 1.6, groundY: -.112 },
+    kotaro: { height: 1.18, groundY: -.075 },
+    yuragi: { height: 1.28, groundY: -.09 },
+    baby: { height: 1.05, groundY: -.07 },
   };
   const characterShadowMap = softShadowTexture();
   for (const entity of Object.values(CHARACTER_TEMPLATES)) {
@@ -633,33 +620,9 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 
-function setFurnitureBlend(roots, facade, blend) {
-  if (facade) {
-    facade.visible = blend > .01;
-    facade.material.opacity = blend;
-  }
-  for (const root of roots) {
-    root.visible = blend < .995;
-    root.traverse((object) => {
-      if (!object.material) return;
-      const materials = Array.isArray(object.material) ? object.material : [object.material];
-      for (const material of materials) {
-        if (material.userData.furnitureBaseOpacity === undefined) {
-          material.userData.furnitureBaseOpacity = material.opacity;
-          material.userData.furnitureBaseTransparent = material.transparent;
-          material.userData.furnitureBaseDepthWrite = material.depthWrite;
-        }
-        material.opacity = material.userData.furnitureBaseOpacity * (1 - blend);
-        material.transparent = material.userData.furnitureBaseTransparent || blend > .01;
-        material.depthWrite = material.userData.furnitureBaseDepthWrite && blend < .5;
-      }
-    });
-  }
-}
-
 function animationFrame(entity, now) {
-  if (entity.action === "walk") return Math.floor((now * .0105 + entity.seed) % 8);
-  if (entity.action === "crawl") return Math.floor((now * .012 + entity.seed) % 8);
+  if (entity.action === "walk") return Math.floor((now * .0135 + entity.seed) % 8);
+  if (entity.action === "crawl") return Math.floor((now * .0145 + entity.seed) % 8);
   if (entity.action === "scratch") {
     const sequence = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1];
     return sequence[Math.floor((now - entity.actionStartedAt) / 92) % sequence.length];
@@ -691,14 +654,6 @@ function syncScene(now, dt) {
   visual.angle = normalizedAngle(visual.angle + normalizedAngle(state.player.angle - visual.angle) * follow);
   const under = isInsideRect(state.player, sofa);
   const underTable = isInsideRect(state.player, tableArea);
-  for (const root of [...furnitureMeshes.sofa, ...furnitureMeshes.table]) root.visible = false;
-  for (const facade of Object.values(furnitureFacades)) {
-    if (!facade) continue;
-    facade.visible = true;
-    facade.material.opacity = 1;
-  }
-  for (const leg of sofaShellLegs) leg.visible = state.player.z >= 4.45;
-  for (const part of tableShellParts) part.visible = state.player.z >= 5.18;
   camera.position.set(visual.x, under ? .225 : .265, visual.z);
   const viewDrop = under ? .3 : underTable ? .12 : .025;
   visual.pitch += (viewDrop - visual.pitch) * follow;
@@ -715,18 +670,20 @@ function syncScene(now, dt) {
     sprite.visible = distance > .55;
     const specWidth = sprite.userData.actionWidth || sprite.scale.x;
     const specHeight = sprite.userData.baseHeight || sprite.scale.y;
-    const proximityScale = Math.min(1, Math.max(.58, distance / 4.2));
     const scratching = now < entity.scratchingUntil;
     const moving = entity.type === "baby" || entity.action === "walk";
-    const gait = now * (entity.type === "baby" ? .012 : .0105) + entity.seed;
+    const gait = now * (entity.type === "baby" ? .0145 : .0135) + entity.seed;
     const lift = moving ? Math.abs(Math.sin(gait * Math.PI)) * (entity.type === "baby" ? .018 : .028) : 0;
     sprite.position.set(entity.x, sprite.userData.groundY + lift, entity.z);
     const travelView = normalizedAngle(entity.angle - Math.atan2(state.player.x - entity.x, state.player.z - entity.z));
     const side = Math.sin(travelView);
-    sprite.scale.x = Math.sign(side || 1) * specWidth * proximityScale * (.76 + Math.abs(Math.cos(travelView)) * .24);
-    sprite.scale.y = specHeight * proximityScale * (1 - lift * .12);
+    if (sprite.userData.facing === undefined) sprite.userData.facing = side < 0 ? -1 : 1;
+    if (side > .22) sprite.userData.facing = 1;
+    else if (side < -.22) sprite.userData.facing = -1;
+    sprite.scale.x = sprite.userData.facing * specWidth;
+    sprite.scale.y = specHeight * (1 - lift * .12);
     sprite.material.color.set(Math.cos(travelView) < -.2 ? 0xe7ddd8 : 0xfff8f2);
-    sprite.material.rotation = scratching ? Math.sin(now * .028) * .018 : Math.sin(gait) * (entity.type === "baby" ? .012 : .008);
+    sprite.material.rotation = scratching ? Math.sin(now * .024) * .014 : Math.sin(gait) * (entity.type === "baby" ? .008 : .005);
     const shadow = characterShadows.get(entity.id);
     if (shadow) {
       shadow.position.set(entity.x, .025, entity.z - .42);
@@ -738,7 +695,7 @@ function syncScene(now, dt) {
   for (const hair of state.hairs) {
     const object = hairObjects.get(hair.id);
     if (!object) continue;
-    object.position.set(hair.x, .012, hair.z);
+    object.position.set(hair.x, .006, hair.z);
     const shadow = hairShadows.get(hair.id);
     if (shadow) {
       shadow.position.set(hair.x, .004, hair.z);
@@ -819,7 +776,7 @@ function update(dt, now) {
       entity.x = actorResolved.x;
       entity.z = actorResolved.z;
       if (actorResolved.hit) {
-        entity.angle = normalizedAngle(entity.angle + Math.PI * (.72 + entity.seed * .013));
+        entity.targetAngle = normalizedAngle(entity.angle + Math.PI * (.72 + entity.seed * .013));
         entity.turnAt = now + 650;
       }
     }
@@ -845,7 +802,7 @@ function update(dt, now) {
       }
       const dx = entity.x - state.player.x;
       const dz = entity.z - state.player.z;
-      entity.angle = Math.atan2(dx, dz);
+      entity.targetAngle = Math.atan2(dx, dz);
       entity.turnAt = now + 500;
       if (now - state.lastCollisionAt > 700) {
         state.lastCollisionAt = now;
@@ -876,7 +833,9 @@ function startGame() {
   visual.x = state.player.x; visual.z = state.player.z; visual.angle = state.player.angle; visual.pitch = .025;
   for (const [id, object] of hairObjects) {
     if (id >= state.hairs.length) {
-      world.remove(object); object.material.dispose(); hairObjects.delete(id);
+      world.remove(object);
+      object.traverse((part) => part.material?.dispose());
+      hairObjects.delete(id);
       const shadow = hairShadows.get(id);
       if (shadow) {
         world.remove(shadow); shadow.geometry.dispose(); shadow.material.dispose(); hairShadows.delete(id);
@@ -956,7 +915,7 @@ function frame(now) {
 
 async function init() {
   ui.start.disabled = true;
-  buildRoom(); createRobotBody(); await Promise.all([buildBackWallArt(), buildSideWallArt(), buildSofaFacade(), buildGameObjects()]); resize(); syncScene(performance.now(), 1 / 60);
+  buildRoom(); createRobotBody(); await Promise.all([buildBackWallArt(), buildSideWallArt(), buildGameObjects()]); resize(); syncScene(performance.now(), 1 / 60);
   ui.start.disabled = false; ui.controls.hidden = true; requestAnimationFrame(frame);
   const params = new URLSearchParams(location.search);
   if (params.has("autostart")) {
