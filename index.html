@@ -7,11 +7,14 @@
     <meta name="description" content="掃除機目線で猫毛を集める60秒のスマホゲーム" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='25' font-size='24'%3E🐾%3C/text%3E%3C/svg%3E" />
     <title>ねこ毛、いただきます。</title>
-    <link rel="stylesheet" href="./styles.css?v=pixel29" />
+    <link rel="stylesheet" href="./styles.css?v=pixel64" />
   </head>
   <body>
     <main id="app" aria-label="ねこ毛掃除ゲーム">
       <canvas id="game" aria-label="床すれすれの掃除機視点のゲーム画面"></canvas>
+      <div id="suction-fx" class="suction-fx" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
       <img id="robot-foreground" class="robot-foreground" src="./public/assets/robot-foreground-v4-pixel.png" alt="" aria-hidden="true" />
 
       <section id="hud" class="hud" aria-live="polite">
@@ -22,7 +25,7 @@
       <div id="message" class="message" aria-live="assertive"></div>
 
       <section id="controls" class="controls" aria-label="ゲーム操作">
-        <div id="joystick" class="joystick" aria-label="移動スティック">
+        <div id="joystick" class="joystick" aria-label="画面をドラッグして移動">
           <span id="stick" class="stick"></span>
         </div>
       </section>
@@ -32,7 +35,7 @@
         <h1>ねこ毛、<br />いただきます。</h1>
         <p>床すれすれを走って、ふわふわを集めよう。<br />猫がかいかいしたら、新しい毛のチャンス。</p>
         <div class="howto">
-          <span>スティックの方向へ移動</span><i></i><span>毛に乗ると自動吸引</span>
+          <span>画面をドラッグして移動</span><i></i><span>毛に乗ると自動吸引</span>
         </div>
         <button id="start" class="primary" type="button">そうじをはじめる</button>
       </section>
@@ -48,6 +51,6 @@
         <button id="restart" class="primary" type="button">もういちど</button>
       </section>
     </main>
-    <script type="module" src="./src/game.js?v=pixel52"></script>
+    <script type="module" src="./src/game.js?v=pixel64"></script>
   </body>
 </html>

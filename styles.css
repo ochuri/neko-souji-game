@@ -39,6 +39,49 @@ button { font: inherit; }
 }
 .robot-foreground[hidden] { display: none; }
 
+.suction-fx {
+  position: absolute;
+  left: 50%;
+  bottom: 104px;
+  width: 230px;
+  height: 190px;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%);
+}
+.suction-fx.active { opacity: 1; }
+.suction-fx i {
+  --turn: 0deg;
+  position: absolute;
+  left: calc(50% - 2px);
+  bottom: 0;
+  width: 4px;
+  height: 112px;
+  border-radius: 4px;
+  background: linear-gradient(to top, rgba(255,253,225,.04), rgba(255,250,215,.92) 42%, rgba(255,255,247,0));
+  filter: drop-shadow(0 0 3px rgba(255,244,192,.55));
+  transform-origin: 50% 100%;
+  transform: rotate(var(--turn)) translateY(-12px) scaleY(.8);
+  animation: inhale-ray .28s steps(3, end) infinite;
+}
+.suction-fx i:nth-child(1) { --turn: -62deg; height: 82px; }
+.suction-fx i:nth-child(2) { --turn: -49deg; height: 105px; animation-delay: -.08s; }
+.suction-fx i:nth-child(3) { --turn: -36deg; height: 128px; }
+.suction-fx i:nth-child(4) { --turn: -23deg; height: 145px; animation-delay: -.15s; }
+.suction-fx i:nth-child(5) { --turn: -11deg; height: 155px; }
+.suction-fx i:nth-child(6) { --turn: 0deg; height: 164px; animation-delay: -.1s; }
+.suction-fx i:nth-child(7) { --turn: 11deg; height: 155px; }
+.suction-fx i:nth-child(8) { --turn: 23deg; height: 145px; animation-delay: -.18s; }
+.suction-fx i:nth-child(9) { --turn: 36deg; height: 128px; }
+.suction-fx i:nth-child(10) { --turn: 49deg; height: 105px; animation-delay: -.06s; }
+.suction-fx i:nth-child(11) { --turn: 62deg; height: 82px; }
+@keyframes inhale-ray {
+  0% { opacity: .15; transform: rotate(var(--turn)) translateY(-28px) scaleY(.58); }
+  55% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--turn)) translateY(2px) scaleY(1); }
+}
+
 .hud {
   position: absolute;
   top: max(20px, env(safe-area-inset-top));
@@ -78,27 +121,11 @@ button { font: inherit; }
 .controls { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .joystick {
   position: absolute;
-  left: max(22px, env(safe-area-inset-left));
-  bottom: max(278px, calc(env(safe-area-inset-bottom) + 268px));
-  width: 116px;
-  height: 116px;
-  border: 1px solid rgba(255,255,255,.28);
-  border-radius: 50%;
-  background: rgba(35, 32, 45, .18);
-  box-shadow: inset 0 0 30px rgba(255,255,255,.08);
-  backdrop-filter: blur(3px);
+  inset: 0;
+  touch-action: none;
   pointer-events: auto;
 }
-.stick {
-  position: absolute;
-  left: 35px;
-  top: 35px;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: rgba(255,248,239,.78);
-  box-shadow: 0 5px 18px rgba(35,32,45,.24), inset 0 -3px 0 rgba(117,103,135,.2);
-}
+.stick { display: none; }
 .panel {
   position: absolute;
   inset: 0;
@@ -146,4 +173,5 @@ button { font: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   .message { transition: none; }
+  .suction-fx i { animation: none; opacity: .68; }
 }

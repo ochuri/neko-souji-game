@@ -13,7 +13,7 @@ import {
   stepWanderer,
   sweptEllipseOverlap,
   turnToward,
-} from "./core.js?v=pixel52";
+} from "./core.js?v=pixel64";
 
 const canvas = document.querySelector("#game");
 const ui = {
@@ -32,13 +32,14 @@ const ui = {
   joystick: document.querySelector("#joystick"),
   stick: document.querySelector("#stick"),
   message: document.querySelector("#message"),
+  suctionFx: document.querySelector("#suction-fx"),
   robot: document.querySelector("#robot-foreground"),
 };
 
 const CHARACTER_TEMPLATES = {
   kotaro: { id: "kotaro", type: "kotaro", x: 3.2, z: 8.1, angle: .8, speed: .42, radius: .5, turnAt: 0, seed: 2 },
   yuragi: { id: "yuragi", type: "yuragi", x: -.15, z: 8.8, angle: -1.4, speed: .28, radius: .58, turnAt: 0, seed: 7 },
-  baby: { id: "baby", type: "baby", x: -3.7, z: 8.2, angle: 2.1, speed: .34, radius: .48, turnAt: 0, seed: 11 },
+  baby: { id: "baby", type: "baby", x: .1, z: 3.65, angle: Math.PI / 2, speed: .34, radius: .48, turnAt: 0, seed: 11 },
 };
 const CHARACTER_ANIMATIONS = {
   kotaro: {
@@ -82,12 +83,13 @@ const actorSolids = [
   { id: "chair-a-body", kind: "rect", x: -3.9, z: 4.6, w: 1.24, d: 1.24 },
   { id: "chair-b-body", kind: "rect", x: -4.0, z: 8.4, w: 1.24, d: 1.24 },
 ];
-const babyActorSolids = actorSolids.filter((solid) => solid.id !== "table-body");
 
 const vomits = [
   { id: "v1", x: .78, z: 2.8, radius: .38 },
   { id: "v2", x: -2.25, z: 10.25, radius: .36 },
 ];
+const actorHazardSolids = vomits.map((item) => ({ id: `actor-${item.id}`, kind: "circle", x: item.x, z: item.z, radius: item.radius + .12 }));
+const actorMovementObstacles = [...actorSolids, ...actorHazardSolids];
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance" });
 renderer.setPixelRatio(1);
@@ -112,7 +114,7 @@ const characterShadows = new Map();
 const characterAnimationTextures = new Map();
 const vomitSparkles = [];
 const keys = new Set();
-const input = { x: 0, y: 0, suction: false, joystickPointer: null, anchorAngle: 0 };
+const input = { x: 0, y: 0, suction: false, joystickPointer: null, anchorAngle: 0, originX: 0, originY: 0 };
 const visual = { x: 0, z: 0, angle: 0, pitch: .025 };
 let state = makeState();
 let lastFrame = performance.now();
@@ -122,6 +124,9 @@ const bgm = new Audio("./public/assets/audio/nekoge_loopA.wav");
 bgm.loop = true;
 bgm.preload = "auto";
 bgm.volume = .16;
+const SFX_LEVEL = 3;
+let lastVacuumSoundAt = 0;
+let vacuumWhooshCount = 0;
 let robotRing = null;
 let suctionLight = null;
 let hairAtlasTexture = null;
@@ -178,13 +183,11 @@ function actorFootReachedRobot(entity) {
 }
 
 function actorFurnitureRadius(entity) {
-  return entity.type === "baby" ? .5 : entity.type === "yuragi" ? .64 : .58;
+  return entity.type === "baby" ? .3 : entity.type === "yuragi" ? .64 : .58;
 }
 
-function actorMovementSolids(entity) {
-  // The baby may crawl through the open space beneath the table, but still
-  // avoids every visible leg and both chair bodies.
-  return entity.type === "baby" ? babyActorSolids : actorSolids;
+function actorMovementSolids() {
+  return actorMovementObstacles;
 }
 
 function sidestepActor(entity, preferredDirection, stepDistance, now) {
@@ -206,6 +209,29 @@ function sidestepActor(entity, preferredDirection, stepDistance, now) {
     return true;
   }
   return false;
+}
+
+function stepBabyPatrol(entity, dt) {
+  if (entity.evading) {
+    entity.z += (3.65 - entity.z) * Math.min(1, dt * 3.5);
+    entity.angle = Math.PI / 2;
+    entity.targetAngle = entity.angle;
+    return;
+  }
+  if (entity.x > .22) {
+    entity.x = Math.max(.22, entity.x - entity.speed * dt * 2);
+    entity.patrolDirection = -1;
+    entity.angle = -Math.PI / 2;
+    entity.targetAngle = entity.angle;
+    return;
+  }
+  if (!entity.patrolDirection) entity.patrolDirection = entity.seed % 2 ? 1 : -1;
+  entity.x += entity.patrolDirection * entity.speed * dt;
+  if (entity.x <= 0) { entity.x = 0; entity.patrolDirection = 1; }
+  if (entity.x >= .22) { entity.x = .22; entity.patrolDirection = -1; }
+  entity.z += (3.65 - entity.z) * Math.min(1, dt * 3.5);
+  entity.angle = entity.patrolDirection > 0 ? Math.PI / 2 : -Math.PI / 2;
+  entity.targetAngle = entity.angle;
 }
 
 function makeState() {
@@ -663,6 +689,8 @@ function addHairObject(hair) {
   );
   shadow.rotation.x = -Math.PI / 2;
   shadow.scale.set(width * .78, Math.max(.045, height * .25), 1);
+  shadow.userData.baseScaleX = width * .78;
+  shadow.userData.baseScaleY = Math.max(.045, height * .25);
   shadow.position.set(hair.x, .002, hair.z);
   world.add(shadow); hairShadows.set(hair.id, shadow);
   return group;
@@ -699,6 +727,25 @@ function addVomitObject(item) {
     sprite.center.set(.5, .15); sprite.position.set(x, .035, z); sprite.scale.set(size, size, 1); group.add(sprite);
     vomitSparkles.push({ sprite, size, phase });
   }
+  const warning = new THREE.Sprite(new THREE.SpriteMaterial({ map: dangerMarkerTexture(), transparent: true, alphaTest: .08, depthWrite: false, toneMapped: false }));
+  warning.center.set(.5, 0);
+  warning.position.set(0, .08, 0);
+  warning.scale.set(.13, .17, 1);
+  warning.renderOrder = 6;
+  group.add(warning);
+}
+
+function dangerMarkerTexture() {
+  const source = document.createElement("canvas"); source.width = 32; source.height = 40;
+  const g = source.getContext("2d");
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = "#5d3940"; g.beginPath(); g.arc(16, 15, 13, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "#fff8e9"; g.beginPath(); g.arc(16, 14, 11, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.moveTo(12, 23); g.lineTo(16, 30); g.lineTo(20, 23); g.fill();
+  g.fillStyle = "#e65f4f"; g.fillRect(14, 7, 4, 10); g.fillRect(14, 20, 4, 4);
+  const texture = new THREE.CanvasTexture(source); texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = texture.minFilter = THREE.NearestFilter; texture.generateMipmaps = false;
+  return texture;
 }
 
 function sparkleTexture() {
@@ -736,7 +783,7 @@ async function buildGameObjects() {
   const specs = {
     kotaro: { height: 1.18, groundY: -.075 },
     yuragi: { height: 1.28, groundY: -.09 },
-    baby: { height: 1.05, groundY: -.07 },
+    baby: { height: .82, groundY: -.07 },
   };
   const characterShadowMap = softShadowTexture();
   for (const entity of Object.values(CHARACTER_TEMPLATES)) {
@@ -833,8 +880,13 @@ function syncScene(now, dt) {
     const renderX = entity.x;
     const renderZ = entity.z;
     const nearForeground = distance < .65;
-    sprite.material.depthTest = !nearForeground;
-    sprite.material.depthWrite = !nearForeground;
+    // The baby is constrained to the open lane in front of the furniture.
+    // Render it there as a foreground actor so chair rails can never slice its
+    // face just because a transparent billboard intersects a depth edge.
+    const foregroundActor = entity.type === "baby" || nearForeground;
+    sprite.material.depthTest = !foregroundActor;
+    sprite.material.depthWrite = !foregroundActor;
+    sprite.renderOrder = entity.type === "baby" ? 5 : 2;
     sprite.position.set(renderX, sprite.userData.groundY, renderZ);
     const travelView = normalizedAngle(entity.angle - Math.atan2(state.player.x - entity.x, state.player.z - entity.z));
     const side = Math.sin(travelView);
@@ -857,9 +909,13 @@ function syncScene(now, dt) {
     const object = hairObjects.get(hair.id);
     if (!object) continue;
     object.position.set(hair.x, .001, hair.z);
+    const suctionScale = 1 - (hair.suctionProgress || 0) * .52;
+    object.scale.setScalar(suctionScale);
     const shadow = hairShadows.get(hair.id);
     if (shadow) {
       shadow.position.set(hair.x, .002, hair.z);
+      shadow.scale.x = shadow.userData.baseScaleX * suctionScale;
+      shadow.scale.y = shadow.userData.baseScaleY * suctionScale;
       shadow.visible = object.visible;
     }
   }
@@ -891,6 +947,37 @@ function syncScene(now, dt) {
   canvas.dataset.position = `${state.player.x.toFixed(2)},${state.player.z.toFixed(2)}`;
   canvas.dataset.under = under ? "sofa" : underTable ? "table" : "room";
   canvas.setAttribute("aria-label", `床すれすれの掃除機視点のゲーム画面。現在地: ${under ? "ソファの下" : underTable ? "机の下" : "部屋"}`);
+}
+
+function pullNearbyHair(dt, now) {
+  let pulling = false;
+  for (const hair of state.hairs) {
+    if (hair.collected) continue;
+    const dx = state.player.x - hair.x;
+    const dz = state.player.z - hair.z;
+    const distance = Math.hypot(dx, dz);
+    if (!hair.suctionStartedAt && (distance <= .001 || distance > 1.38)) continue;
+    const targetAngle = Math.atan2(-dx, -dz);
+    if (!hair.suctionStartedAt && Math.abs(normalizedAngle(targetAngle - state.player.angle)) > .92) continue;
+    if (!hair.suctionStartedAt) hair.suctionStartedAt = now;
+    const progress = Math.min(1, (now - hair.suctionStartedAt) / 720);
+    const targetX = state.player.x + Math.sin(state.player.angle) * .43;
+    const targetZ = state.player.z + Math.cos(state.player.angle) * .43;
+    const pullX = targetX - hair.x;
+    const pullZ = targetZ - hair.z;
+    const pullDistance = Math.hypot(pullX, pullZ) || 1;
+    const step = Math.min(pullDistance, dt * (.78 + progress * 1.8));
+    hair.x += pullX / pullDistance * step;
+    hair.z += pullZ / pullDistance * step;
+    hair.suctionProgress = progress;
+    pulling = true;
+  }
+  ui.suctionFx.classList.toggle("active", pulling);
+  canvas.dataset.suctionFx = pulling ? "pulling" : "idle";
+  if (pulling && now - lastVacuumSoundAt > 420) {
+    lastVacuumSoundAt = now;
+    vacuumWhooshSound();
+  }
 }
 
 function update(dt, now) {
@@ -941,7 +1028,8 @@ function update(dt, now) {
     } else {
       entity.action = entity.type === "baby" ? "crawl" : "walk";
       const entityBeforeMove = { x: entity.x, z: entity.z };
-      stepWanderer(entity, dt, now);
+      if (entity.type === "baby") stepBabyPatrol(entity, dt);
+      else stepWanderer(entity, dt, now);
       const actorResolved = resolveMovement(entityBeforeMove, entity, actorMovementSolids(entity), actorFurnitureRadius(entity));
       entity.x = actorResolved.x;
       entity.z = actorResolved.z;
@@ -956,18 +1044,27 @@ function update(dt, now) {
     const avoidDz = entity.z - state.player.z;
     const avoidRight = avoidDx * Math.cos(state.player.angle) - avoidDz * Math.sin(state.player.angle);
     const avoidForward = avoidDx * Math.sin(state.player.angle) + avoidDz * Math.cos(state.player.angle);
-    const avoidanceRange = entity.type === "baby" ? 2.7 : 2.05;
-    const avoidanceSpeed = entity.type === "baby" ? 2.8 : 2.4;
-    if (avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .88) {
+    const playerMoveX = state.player.x - playerBeforeMove.x;
+    const playerMoveZ = state.player.z - playerBeforeMove.z;
+    const playerMoveDistance = Math.hypot(playerMoveX, playerMoveZ);
+    const avoidanceRange = entity.type === "baby" ? 3.3 : 2.05;
+    const avoidanceSpeed = entity.type === "baby" ? 3.2 : 2.4;
+    if (entity.type === "baby" && playerMoveDistance > .001 && avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .88) {
+      entity.evading = true;
+      entity.x = Math.min(.7, entity.x + dt * avoidanceSpeed);
+      entity.patrolDirection = 1;
+      entity.angle = Math.PI / 2;
+      entity.targetAngle = entity.angle;
+    } else if (playerMoveDistance > .001 && avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .88) {
       const direction = entity.avoidDirection ?? (avoidRight >= 0 ? 1 : -1);
       sidestepActor(entity, direction, dt * avoidanceSpeed, now);
+    } else if (entity.type === "baby" && entity.evading && (avoidForward <= -.35 || avoidForward >= avoidanceRange + .4)) {
+      entity.evading = false;
+      entity.patrolDirection = -1;
     } else if (Math.abs(avoidRight) > 1.02 || avoidForward <= .05 || avoidForward >= avoidanceRange + .25) {
       entity.avoidDirection = null;
     }
     const actorContactRadius = playerActorRadius(entity);
-    const playerMoveX = state.player.x - playerBeforeMove.x;
-    const playerMoveZ = state.player.z - playerBeforeMove.z;
-    const playerMoveDistance = Math.hypot(playerMoveX, playerMoveZ);
     const movingTowardActor = playerMoveX * (entity.x - playerBeforeMove.x) + playerMoveZ * (entity.z - playerBeforeMove.z) > 0;
     if ((playerMoveDistance < .0001 || movingTowardActor) && actorFootReachedRobot(entity) && sweptEllipseOverlap(
       playerBeforeMove,
@@ -997,7 +1094,13 @@ function update(dt, now) {
       const dx = entity.x - state.player.x;
       const dz = entity.z - state.player.z;
       const lateral = dx * Math.cos(state.player.angle) - dz * Math.sin(state.player.angle);
-      sidestepActor(entity, entity.avoidDirection ?? (lateral >= 0 ? 1 : -1), dt * (entity.type === "baby" ? 2.8 : 2.35), now);
+      if (entity.type === "baby") {
+        entity.evading = true;
+        entity.x = Math.min(.7, entity.x + dt * 3.2);
+        entity.patrolDirection = 1;
+      } else {
+        sidestepActor(entity, entity.avoidDirection ?? (lateral >= 0 ? 1 : -1), dt * 2.35, now);
+      }
       if (now - state.lastCollisionAt > 700) {
         state.lastCollisionAt = now;
         showMessage(entity.type === "baby" ? "あぶない、あぶない" : `${entity.type === "kotaro" ? "虎太郎" : "ゆらぎ"}、通ります`);
@@ -1006,7 +1109,9 @@ function update(dt, now) {
     }
   }
   if (hitVomit(state.player, vomits)) return finish(true);
-  const collected = collectTouchedHair(state.player, state.hairs);
+  pullNearbyHair(dt, now);
+  const collectibleHairs = state.hairs.filter((hair) => !hair.suctionStartedAt || now - hair.suctionStartedAt >= 720);
+  const collected = collectTouchedHair(state.player, collectibleHairs);
   if (collected.grams) {
     state.grams = Math.round((state.grams + collected.grams) * 10) / 10;
     state.counts.kotaro += collected.kotaro; state.counts.yuragi += collected.yuragi;
@@ -1024,6 +1129,7 @@ function update(dt, now) {
 
 function startGame() {
   state = makeState();
+  vacuumWhooshCount = 0; lastVacuumSoundAt = 0; canvas.dataset.vacuumWhooshes = "0";
   input.x = 0; input.y = 0; input.suction = false; input.anchorAngle = state.player.angle;
   visual.x = state.player.x; visual.z = state.player.z; visual.angle = state.player.angle; visual.pitch = .025;
   for (const [id, object] of hairObjects) {
@@ -1046,7 +1152,10 @@ function startGame() {
   state.mode = "playing";
   ui.intro.hidden = true; ui.result.hidden = true; ui.controls.hidden = false;
   ui.robot.hidden = false;
+  ui.suctionFx.classList.remove("active");
   ui.grams.textContent = "0.0"; ui.time.textContent = "60";
+  canvas.dataset.sfxLevel = SFX_LEVEL.toString();
+  canvas.dataset.bgmVolume = bgm.volume.toString();
   bgm.currentTime = 0;
   ensureAudio();
 }
@@ -1057,6 +1166,7 @@ function finish(hitHazard) {
   bgm.pause();
   canvas.dataset.bgm = "paused";
   ui.controls.hidden = true; ui.robot.hidden = true; ui.result.hidden = false;
+  ui.suctionFx.classList.remove("active");
   ui.resultGrams.textContent = state.grams.toFixed(1);
   ui.kotaroCount.textContent = `${state.counts.kotaro} ふわ`; ui.yuragiCount.textContent = `${state.counts.yuragi} ふわ`;
   ui.resultKicker.textContent = hitHazard ? "OOPS" : "CLEANUP COMPLETE";
@@ -1094,9 +1204,43 @@ function tone({ from, to = from, duration = .12, gainValue = .04, type = "sine",
   const start = audio.currentTime + delay;
   const osc = audio.createOscillator(); const gain = audio.createGain();
   osc.type = type; osc.frequency.setValueAtTime(from, start); osc.frequency.exponentialRampToValueAtTime(Math.max(20, to), start + duration);
-  gain.gain.setValueAtTime(.0001, start); gain.gain.exponentialRampToValueAtTime(gainValue, start + .012);
+  gain.gain.setValueAtTime(.0001, start); gain.gain.exponentialRampToValueAtTime(gainValue * SFX_LEVEL, start + .012);
   gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
   osc.connect(gain).connect(audio.destination); osc.start(start); osc.stop(start + duration + .01);
+}
+
+function vacuumWhooshSound() {
+  canvas.dataset.lastSound = "vacuum-whoosh";
+  vacuumWhooshCount += 1;
+  canvas.dataset.vacuumWhooshes = vacuumWhooshCount.toString();
+  if (!audio || audio.state !== "running") return;
+  const start = audio.currentTime;
+  const duration = .38;
+  const motor = audio.createOscillator();
+  const motorGain = audio.createGain();
+  motor.type = "sawtooth";
+  motor.frequency.setValueAtTime(92, start);
+  motor.frequency.exponentialRampToValueAtTime(58, start + duration);
+  motorGain.gain.setValueAtTime(.0001, start);
+  motorGain.gain.exponentialRampToValueAtTime(.045 * SFX_LEVEL, start + .025);
+  motorGain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  motor.connect(motorGain).connect(audio.destination);
+
+  const frames = Math.ceil(audio.sampleRate * duration);
+  const noiseBuffer = audio.createBuffer(1, frames, audio.sampleRate);
+  const samples = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < frames; i += 1) samples[i] = (Math.random() * 2 - 1) * (1 - i / frames * .35);
+  const noise = audio.createBufferSource();
+  const filter = audio.createBiquadFilter();
+  const noiseGain = audio.createGain();
+  noise.buffer = noiseBuffer;
+  filter.type = "bandpass"; filter.frequency.value = 540; filter.Q.value = .7;
+  noiseGain.gain.setValueAtTime(.0001, start);
+  noiseGain.gain.exponentialRampToValueAtTime(.06 * SFX_LEVEL, start + .018);
+  noiseGain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  noise.connect(filter).connect(noiseGain).connect(audio.destination);
+  motor.start(start); motor.stop(start + duration + .01);
+  noise.start(start); noise.stop(start + duration + .01);
 }
 
 function pickupSound() {
@@ -1119,7 +1263,7 @@ function catMeow(type, sleepy = false) {
   osc.type = "triangle"; osc.frequency.setValueAtTime(base, start);
   osc.frequency.exponentialRampToValueAtTime(sleepy ? base * .82 : base * 1.62, start + duration * .35);
   osc.frequency.exponentialRampToValueAtTime(base * .68, start + duration);
-  gain.gain.setValueAtTime(.0001, start); gain.gain.exponentialRampToValueAtTime(.038, start + .025);
+  gain.gain.setValueAtTime(.0001, start); gain.gain.exponentialRampToValueAtTime(.038 * SFX_LEVEL, start + .025);
   gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
   osc.connect(gain).connect(audio.destination); osc.start(start); osc.stop(start + duration + .01);
   tone({ from: base * .5, to: base * .38, duration: duration * .92, gainValue: .012, type: "sine", delay: .015 });
@@ -1140,26 +1284,30 @@ function sparkleFailSound() {
 
 function joystickMove(event) {
   if (input.joystickPointer !== event.pointerId) return;
-  const rect = ui.joystick.getBoundingClientRect();
-  const x = event.clientX - (rect.left + rect.width / 2); const y = event.clientY - (rect.top + rect.height / 2);
-  const max = rect.width * .31; const distance = Math.hypot(x, y) || 1; const scale = Math.min(1, max / distance);
+  const x = event.clientX - input.originX; const y = event.clientY - input.originY;
+  const max = 64; const distance = Math.hypot(x, y) || 1; const scale = Math.min(1, max / distance);
   const dx = x * scale; const dy = y * scale; input.x = dx / max; input.y = dy / max;
-  ui.stick.style.transform = `translate(${dx}px, ${dy}px)`;
 }
 
 function joystickEnd(event) {
   if (input.joystickPointer !== event.pointerId) return;
-  input.joystickPointer = null; input.x = input.y = 0; ui.stick.style.transform = "translate(0, 0)";
+  input.joystickPointer = null; input.x = input.y = 0;
 }
 
 function resetControls() {
   input.joystickPointer = null;
   input.x = input.y = 0;
   keys.clear();
-  ui.stick.style.transform = "translate(0, 0)";
 }
 
-ui.joystick.addEventListener("pointerdown", (event) => { ensureAudio(); input.joystickPointer = event.pointerId; input.anchorAngle = state.player.angle; ui.joystick.setPointerCapture(event.pointerId); joystickMove(event); });
+ui.joystick.addEventListener("pointerdown", (event) => {
+  ensureAudio();
+  input.joystickPointer = event.pointerId;
+  input.anchorAngle = state.player.angle;
+  input.originX = event.clientX;
+  input.originY = event.clientY;
+  ui.joystick.setPointerCapture(event.pointerId);
+});
 ui.joystick.addEventListener("pointermove", joystickMove);
 ui.joystick.addEventListener("pointerup", joystickEnd);
 ui.joystick.addEventListener("pointercancel", joystickEnd);
@@ -1222,7 +1370,8 @@ async function init() {
       if (actor) {
         const actorZone = params.get("actorZone");
         if (actorZone === "sofa") { actor.x = sofa.x; actor.z = 3.7; actor.angle = 0; }
-        else if (actorZone === "table") { actor.x = .15; actor.z = 4.4; actor.angle = 0; }
+        else if (actorZone === "table") { actor.x = .1; actor.z = 3.65; actor.angle = Math.PI / 2; }
+        else if (actor.type === "baby") { actor.x = .1; actor.z = 3.65; actor.angle = Math.PI / 2; }
         else { actor.x = 0; actor.z = 3.8; actor.angle = Math.PI; }
         // Debug routes are visual proof routes: isolate the requested actor so
         // another roster member cannot be mistaken for the target.
