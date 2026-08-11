@@ -1123,7 +1123,7 @@ function update(dt, now) {
       if (object) object.visible = false;
       if (shadow) shadow.visible = false;
     }
-    showMessage(`+${collected.grams.toFixed(1)} g`); pickupSound();
+    showMessage(`+${collected.grams.toFixed(1)}g`, "pickup"); pickupSound();
   }
   ui.grams.textContent = state.grams.toFixed(1);
   ui.time.textContent = Math.ceil(state.remaining);
@@ -1178,8 +1178,11 @@ function finish(hitHazard) {
   if (hitHazard) sparkleFailSound();
 }
 
-function showMessage(text) {
-  ui.message.textContent = text; ui.message.classList.add("show"); clearTimeout(messageTimer);
+function showMessage(text, kind = "") {
+  ui.message.textContent = text;
+  ui.message.classList.toggle("pickup", kind === "pickup");
+  ui.message.classList.add("show");
+  clearTimeout(messageTimer);
   messageTimer = setTimeout(() => ui.message.classList.remove("show"), 720);
 }
 

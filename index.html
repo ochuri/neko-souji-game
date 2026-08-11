@@ -7,7 +7,7 @@
     <meta name="description" content="掃除機目線で猫毛を集める60秒のスマホゲーム" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='25' font-size='24'%3E🐾%3C/text%3E%3C/svg%3E" />
     <title>ねこ毛、いただきます。</title>
-    <link rel="stylesheet" href="./styles.css?v=pixel66" />
+    <link rel="stylesheet" href="./styles.css?v=pixel70" />
   </head>
   <body>
     <main id="app" aria-label="ねこ毛掃除ゲーム">
@@ -18,8 +18,26 @@
       <img id="robot-foreground" class="robot-foreground" src="./public/assets/robot-foreground-v4-pixel.png" alt="" aria-hidden="true" />
 
       <section id="hud" class="hud" aria-live="polite">
-        <div class="hud-item"><span id="grams">0.0</span><small>g</small></div>
-        <div class="hud-item hud-time"><span id="time">60</span><small>sec</small></div>
+        <div class="hud-item hud-total" aria-label="回収した猫毛の合計">
+          <svg class="hud-icon paw-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <ellipse cx="12" cy="15.5" rx="5.8" ry="4.8" />
+            <ellipse cx="5.2" cy="10.2" rx="2.2" ry="2.8" transform="rotate(-28 5.2 10.2)" />
+            <ellipse cx="9.4" cy="6.5" rx="2.1" ry="2.8" transform="rotate(-8 9.4 6.5)" />
+            <ellipse cx="14.6" cy="6.5" rx="2.1" ry="2.8" transform="rotate(8 14.6 6.5)" />
+            <ellipse cx="18.8" cy="10.2" rx="2.2" ry="2.8" transform="rotate(28 18.8 10.2)" />
+          </svg>
+          <span class="hud-label">合計</span>
+          <strong id="grams">0.0</strong><small>g</small>
+        </div>
+        <div class="hud-divider" aria-hidden="true"></div>
+        <div class="hud-item hud-time" aria-label="ゲームの残り時間">
+          <svg class="hud-icon clock-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.2" />
+            <path d="M12 7.2v5.2l3.5 2" />
+          </svg>
+          <span class="hud-label">のこり</span>
+          <strong id="time">60</strong><small>秒</small>
+        </div>
       </section>
 
       <div id="message" class="message" aria-live="assertive"></div>
@@ -51,6 +69,6 @@
         <button id="restart" class="primary" type="button">もういちど</button>
       </section>
     </main>
-    <script type="module" src="./src/game.js?v=pixel66"></script>
+    <script type="module" src="./src/game.js?v=pixel70"></script>
   </body>
 </html>
