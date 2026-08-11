@@ -13,7 +13,7 @@ import {
   stepWanderer,
   sweptEllipseOverlap,
   turnToward,
-} from "./core.js?v=pixel36";
+} from "./core.js?v=pixel52";
 
 const canvas = document.querySelector("#game");
 const ui = {
@@ -82,6 +82,7 @@ const actorSolids = [
   { id: "chair-a-body", kind: "rect", x: -3.9, z: 4.6, w: 1.24, d: 1.24 },
   { id: "chair-b-body", kind: "rect", x: -4.0, z: 8.4, w: 1.24, d: 1.24 },
 ];
+const babyActorSolids = actorSolids.filter((solid) => solid.id !== "table-body");
 
 const vomits = [
   { id: "v1", x: .78, z: 2.8, radius: .38 },
@@ -109,6 +110,7 @@ const hairShadows = new Map();
 const characterObjects = new Map();
 const characterShadows = new Map();
 const characterAnimationTextures = new Map();
+const vomitSparkles = [];
 const keys = new Set();
 const input = { x: 0, y: 0, suction: false, joystickPointer: null, anchorAngle: 0 };
 const visual = { x: 0, z: 0, angle: 0, pitch: .025 };
@@ -116,12 +118,17 @@ let state = makeState();
 let lastFrame = performance.now();
 let messageTimer = 0;
 let audio = null;
+const bgm = new Audio("./public/assets/audio/nekoge_loopA.wav");
+bgm.loop = true;
+bgm.preload = "auto";
+bgm.volume = .16;
 let robotRing = null;
 let suctionLight = null;
 let hairAtlasTexture = null;
 const projectedActorFoot = new THREE.Vector3();
-const RENDER_SCALE = .68;
+const RENDER_SCALE = .82;
 const OUTLINE_COLOR = 0x49313b;
+const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 const toonRamp = new THREE.DataTexture(new Uint8Array([58, 118, 184, 238, 255]), 5, 1, THREE.RedFormat);
 toonRamp.needsUpdate = true;
 toonRamp.magFilter = toonRamp.minFilter = THREE.NearestFilter;
@@ -171,10 +178,55 @@ function actorFootReachedRobot(entity) {
 }
 
 function actorFurnitureRadius(entity) {
-  return entity.type === "baby" ? .7 : entity.type === "yuragi" ? .64 : .58;
+  return entity.type === "baby" ? .5 : entity.type === "yuragi" ? .64 : .58;
+}
+
+function actorMovementSolids(entity) {
+  // The baby may crawl through the open space beneath the table, but still
+  // avoids every visible leg and both chair bodies.
+  return entity.type === "baby" ? babyActorSolids : actorSolids;
+}
+
+function sidestepActor(entity, preferredDirection, stepDistance, now) {
+  for (const direction of [preferredDirection, -preferredDirection]) {
+    const angle = normalizedAngle(state.player.angle + direction * Math.PI / 2);
+    const target = {
+      x: entity.x + Math.sin(angle) * stepDistance,
+      z: entity.z + Math.cos(angle) * stepDistance,
+    };
+    const resolved = resolveMovement(entity, target, actorMovementSolids(entity), actorFurnitureRadius(entity));
+    const moved = Math.hypot(resolved.x - entity.x, resolved.z - entity.z);
+    if (moved < stepDistance * .35) continue;
+    entity.x = resolved.x;
+    entity.z = resolved.z;
+    entity.angle = angle;
+    entity.targetAngle = angle;
+    entity.turnAt = now + 1800;
+    entity.avoidDirection = direction;
+    return true;
+  }
+  return false;
 }
 
 function makeState() {
+  const wanderers = ROSTERS[rosterTurn++ % ROSTERS.length].map((id) => ({
+    ...CHARACTER_TEMPLATES[id],
+    scratchAt: performance.now() + 4500 + CHARACTER_TEMPLATES[id].seed * 420,
+    scratchingUntil: 0,
+    scratchDropped: false,
+    action: id === "baby" ? "crawl" : "walk",
+    actionStartedAt: performance.now(),
+    actionUntil: 0,
+    actionIndex: 0,
+  }));
+  // The first actor enters through the open center aisle on every round. The
+  // second remains elsewhere in the room, so the cast is present without all
+  // characters being permanently staged in front of the player.
+  if (wanderers[0]) {
+    wanderers[0].x = .45;
+    wanderers[0].z = 7.2;
+    wanderers[0].angle = -Math.PI * .82;
+  }
   return {
     mode: "intro",
     player: { x: 0, z: 0, angle: 0, radius: .26 },
@@ -183,16 +235,7 @@ function makeState() {
     counts: { kotaro: 0, yuragi: 0 },
     remaining: 60,
     lastCollisionAt: 0,
-    wanderers: ROSTERS[rosterTurn++ % ROSTERS.length].map((id) => ({
-      ...CHARACTER_TEMPLATES[id],
-      scratchAt: performance.now() + 4500 + CHARACTER_TEMPLATES[id].seed * 420,
-      scratchingUntil: 0,
-      scratchDropped: false,
-      action: id === "baby" ? "crawl" : "walk",
-      actionStartedAt: performance.now(),
-      actionUntil: 0,
-      actionIndex: 0,
-    })),
+    wanderers,
   };
 }
 
@@ -386,7 +429,7 @@ async function buildBackWallArt() {
   texture.generateMipmaps = false;
   const wallArt = new THREE.Mesh(
     new THREE.PlaneGeometry(11.05, 7.82),
-    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, toneMapped: false })
+    pixelMaterial({ map: texture, side: THREE.DoubleSide })
   );
   wallArt.position.set(0, 4, 11.82);
   wallArt.rotation.y = Math.PI;
@@ -399,7 +442,7 @@ async function buildSideWallArt() {
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
   texture.generateMipmaps = false;
-  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, toneMapped: false });
+  const material = pixelMaterial({ map: texture, side: THREE.DoubleSide });
   const left = new THREE.Mesh(new THREE.PlaneGeometry(15.0, 7.82), material);
   left.position.set(-5.46, 4, 4.3); left.rotation.y = Math.PI / 2; world.add(left);
   const right = new THREE.Mesh(new THREE.PlaneGeometry(15.0, 7.82), material.clone());
@@ -575,12 +618,6 @@ function buildDecor() {
     const picture = new THREE.Mesh(new THREE.PlaneGeometry(1.34, .96), new THREE.MeshBasicMaterial({ map: artTexture, side: THREE.DoubleSide }));
     picture.position.set(x + Math.cos(rotation) * .008, 1.55, z - Math.sin(rotation) * .008); picture.rotation.y = rotation; world.add(picture);
   };
-  box(.75, .08, .36, 0xead6c6, 5.22, .63, 2.24);
-  const sidePlant = new THREE.Group(); sidePlant.position.set(5.18, .7, 2.24); world.add(sidePlant);
-  for (let i = 0; i < 7; i += 1) {
-    const leaf = new THREE.Mesh(new THREE.SphereGeometry(.075, 6, 4), pixelMaterial({ color: i % 2 ? 0x748f6c : 0x91a67d }));
-    leaf.scale.set(1.5, .48, .7); leaf.position.set(Math.sin(i * 2.1) * .14, (i % 3) * .1, Math.cos(i) * .08); leaf.rotation.z = i * .7; sidePlant.add(leaf);
-  }
   const ball = new THREE.Mesh(new THREE.SphereGeometry(.15, 8, 6), pixelMaterial({ color: 0xd9a0a8 }));
   ball.position.set(-4.75, .15, 11.2); ball.castShadow = true; world.add(ball);
 
@@ -633,29 +670,45 @@ function addHairObject(hair) {
 
 function addVomitObject(item) {
   const group = new THREE.Group();
-  group.position.set(item.x, .008, item.z);
+  group.position.set(item.x, .006, item.z);
   world.add(group);
-  const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(item.radius * 1.08, 20),
-    new THREE.MeshBasicMaterial({ color: 0x4b3935, transparent: true, opacity: .16, depthWrite: false, toneMapped: false }),
-  );
-  shadow.rotation.x = -Math.PI / 2; shadow.scale.y = .62; group.add(shadow);
-  const pieces = [
-    [0, 0, 1, .66, 0x87704d],
-    [-.22, .035, .55, .42, 0x9c8055],
-    [.22, -.02, .48, .38, 0x746245],
-    [.42, .13, .14, .1, 0x9d8057],
-    [-.38, -.12, .11, .08, 0x6f5d43],
-  ];
-  for (const [x, z, sx, sz, color] of pieces) {
-    const blob = new THREE.Mesh(new THREE.SphereGeometry(item.radius, 12, 6), pixelMaterial({ color }));
-    blob.scale.set(sx, .075, sz); blob.position.set(x * item.radius, .018, z * item.radius);
-    blob.castShadow = true; blob.receiveShadow = true; addPixelOutline(blob, 28, 1.008); group.add(blob);
+  const boundary = [[-1,0],[-.82,-.45],[-.38,-.62],[.04,-.55],[.42,-.68],[.86,-.38],[1,-.04],[.83,.38],[.42,.52],[.08,.46],[-.28,.6],[-.74,.4]];
+  const puddleGeometry = (scale = 1) => {
+    const shape = new THREE.Shape();
+    boundary.forEach(([x, y], index) => {
+      const px = x * item.radius * scale; const py = y * item.radius * scale;
+      if (index === 0) shape.moveTo(px, py); else shape.lineTo(px, py);
+    });
+    shape.closePath();
+    return new THREE.ShapeGeometry(shape);
+  };
+  const contact = new THREE.Mesh(puddleGeometry(1.08), new THREE.MeshBasicMaterial({ color: 0x705965, transparent: true, opacity: .24, depthWrite: false, toneMapped: false }));
+  contact.rotation.x = -Math.PI / 2; contact.position.y = -.002; contact.scale.y = .72; group.add(contact);
+  const liquid = new THREE.Mesh(puddleGeometry(), pixelMaterial({ color: 0xc5a985, side: THREE.DoubleSide }));
+  liquid.rotation.x = -Math.PI / 2; liquid.position.y = .004; liquid.scale.y = .7; liquid.receiveShadow = true; group.add(liquid);
+  const pearl = new THREE.Mesh(puddleGeometry(.73), new THREE.MeshBasicMaterial({ color: 0xe5cbb8, transparent: true, opacity: .46, depthWrite: false, toneMapped: false }));
+  pearl.rotation.x = -Math.PI / 2; pearl.position.set(-.035, .008, -.025); pearl.scale.y = .56; group.add(pearl);
+  for (const [x, z, sx, color] of [[-.18,-.04,.15,0xffe9cf],[.13,.08,.105,0xdce6c5],[.28,-.08,.075,0xe6d5ec]]) {
+    const glint = new THREE.Mesh(new THREE.CircleGeometry(sx, 12), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .68, depthWrite: false, toneMapped: false }));
+    glint.rotation.x = -Math.PI / 2; glint.scale.y = .32; glint.position.set(x, .012, z); group.add(glint);
   }
-  for (const [x, z, size] of [[-.12,-.03,.045],[.08,.04,.035],[.21,-.02,.028]]) {
-    const crumb = new THREE.Mesh(new THREE.SphereGeometry(size, 8, 5), pixelMaterial({ color: 0xc3a36d }));
-    crumb.scale.y = .55; crumb.position.set(x, .055, z); group.add(crumb);
+  const sparkleMap = sparkleTexture();
+  for (const [x, z, size, phase, color] of [[-.18,.03,.12,0,0xfff1cb],[.11,-.04,.095,2.1,0xe8dcff],[.24,.09,.075,4.2,0xdaf1df]]) {
+    const material = new THREE.SpriteMaterial({ map: sparkleMap, color, transparent: true, opacity: .74, depthWrite: false, toneMapped: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.center.set(.5, .15); sprite.position.set(x, .035, z); sprite.scale.set(size, size, 1); group.add(sprite);
+    vomitSparkles.push({ sprite, size, phase });
   }
+}
+
+function sparkleTexture() {
+  const source = document.createElement("canvas"); source.width = source.height = 16;
+  const g = source.getContext("2d");
+  g.fillStyle = "rgba(255,255,255,.28)"; g.fillRect(7, 1, 2, 14); g.fillRect(1, 7, 14, 2);
+  g.fillStyle = "#fffdf2";
+  g.beginPath(); g.moveTo(8,0); g.lineTo(10,6); g.lineTo(16,8); g.lineTo(10,10); g.lineTo(8,16); g.lineTo(6,10); g.lineTo(0,8); g.lineTo(6,6); g.closePath(); g.fill();
+  const texture = new THREE.CanvasTexture(source); texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = texture.minFilter = THREE.NearestFilter; texture.generateMipmaps = false; return texture;
 }
 
 async function buildGameObjects() {
@@ -810,6 +863,11 @@ function syncScene(now, dt) {
       shadow.visible = object.visible;
     }
   }
+  for (const { sprite, size, phase } of vomitSparkles) {
+    const shimmer = reduceMotion ? .82 : .78 + Math.sin(now * .0032 + phase) * .16;
+    sprite.material.opacity = .5 + shimmer * .34;
+    sprite.scale.set(size * shimmer, size * shimmer, 1);
+  }
   if (robotRing) robotRing.material.color.set(input.suction ? 0xa8eee4 : 0x8e87a6);
   if (suctionLight) suctionLight.intensity = input.suction ? 2.2 : .62;
   canvas.dataset.view = "continuous-3d";
@@ -856,7 +914,7 @@ function update(dt, now) {
   const playerBeforeMove = { x: state.player.x, z: state.player.z };
   const next = { x: state.player.x + Math.sin(state.player.angle) * move, z: state.player.z + Math.cos(state.player.angle) * move };
   const resolved = resolveMovement(state.player, next, solids, state.player.radius);
-  if (resolved.hit && now - state.lastCollisionAt > 450) { state.lastCollisionAt = now; showMessage("こつん"); }
+  if (resolved.hit && now - state.lastCollisionAt > 450) { state.lastCollisionAt = now; showMessage("こつん"); bumpSound(); }
   state.player.x = resolved.x; state.player.z = resolved.z;
   for (const entity of state.wanderers) {
     const entityBeforeUpdate = { x: entity.x, z: entity.z };
@@ -870,6 +928,7 @@ function update(dt, now) {
       entity.scratchingUntil = nextAction === "scratch" ? entity.actionUntil : 0;
       entity.scratchAt = entity.actionUntil + 4300 + entity.seed * 260;
       entity.scratchDropped = nextAction !== "scratch";
+      if (nextAction === "yawn") catMeow(entity.type, true);
     }
     if (now < entity.actionUntil) {
       if (!entity.scratchDropped) {
@@ -883,7 +942,7 @@ function update(dt, now) {
       entity.action = entity.type === "baby" ? "crawl" : "walk";
       const entityBeforeMove = { x: entity.x, z: entity.z };
       stepWanderer(entity, dt, now);
-      const actorResolved = resolveMovement(entityBeforeMove, entity, actorSolids, actorFurnitureRadius(entity));
+      const actorResolved = resolveMovement(entityBeforeMove, entity, actorMovementSolids(entity), actorFurnitureRadius(entity));
       entity.x = actorResolved.x;
       entity.z = actorResolved.z;
       if (actorResolved.hit) {
@@ -897,21 +956,20 @@ function update(dt, now) {
     const avoidDz = entity.z - state.player.z;
     const avoidRight = avoidDx * Math.cos(state.player.angle) - avoidDz * Math.sin(state.player.angle);
     const avoidForward = avoidDx * Math.sin(state.player.angle) + avoidDz * Math.cos(state.player.angle);
-    const avoidanceRange = entity.type === "baby" ? 1.75 : 2.05;
-    if (avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .72) {
-      const direction = avoidRight >= 0 ? 1 : -1;
-      entity.angle = normalizedAngle(state.player.angle + direction * Math.PI / 2);
-      entity.targetAngle = entity.angle;
-      entity.turnAt = now + 1800;
-      const earlyStep = resolveMovement(entity, {
-        x: entity.x + Math.sin(entity.angle) * dt * 2.4,
-        z: entity.z + Math.cos(entity.angle) * dt * 2.4,
-      }, actorSolids, actorFurnitureRadius(entity));
-      entity.x = earlyStep.x;
-      entity.z = earlyStep.z;
+    const avoidanceRange = entity.type === "baby" ? 2.7 : 2.05;
+    const avoidanceSpeed = entity.type === "baby" ? 2.8 : 2.4;
+    if (avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .88) {
+      const direction = entity.avoidDirection ?? (avoidRight >= 0 ? 1 : -1);
+      sidestepActor(entity, direction, dt * avoidanceSpeed, now);
+    } else if (Math.abs(avoidRight) > 1.02 || avoidForward <= .05 || avoidForward >= avoidanceRange + .25) {
+      entity.avoidDirection = null;
     }
     const actorContactRadius = playerActorRadius(entity);
-    if (actorFootReachedRobot(entity) && sweptEllipseOverlap(
+    const playerMoveX = state.player.x - playerBeforeMove.x;
+    const playerMoveZ = state.player.z - playerBeforeMove.z;
+    const playerMoveDistance = Math.hypot(playerMoveX, playerMoveZ);
+    const movingTowardActor = playerMoveX * (entity.x - playerBeforeMove.x) + playerMoveZ * (entity.z - playerBeforeMove.z) > 0;
+    if ((playerMoveDistance < .0001 || movingTowardActor) && actorFootReachedRobot(entity) && sweptEllipseOverlap(
       playerBeforeMove,
       state.player,
       entityBeforeUpdate,
@@ -932,26 +990,18 @@ function update(dt, now) {
           x: state.player.x + dx / distance * separation,
           z: state.player.z + dz / distance * separation,
         };
-        const actorResolved = resolveMovement(entity, actorTarget, actorSolids, actorFurnitureRadius(entity));
+        const actorResolved = resolveMovement(entity, actorTarget, actorMovementSolids(entity), actorFurnitureRadius(entity));
         entity.x = actorResolved.x;
         entity.z = actorResolved.z;
       }
       const dx = entity.x - state.player.x;
       const dz = entity.z - state.player.z;
       const lateral = dx * Math.cos(state.player.angle) - dz * Math.sin(state.player.angle);
-      entity.angle = normalizedAngle(state.player.angle + (lateral >= 0 ? Math.PI / 2 : -Math.PI / 2));
-      entity.targetAngle = entity.angle;
-      entity.turnAt = now + 1800;
-      const sidestepTarget = {
-        x: entity.x + Math.sin(entity.angle) * dt * 2.35,
-        z: entity.z + Math.cos(entity.angle) * dt * 2.35,
-      };
-      const sidestep = resolveMovement(entity, sidestepTarget, actorSolids, actorFurnitureRadius(entity));
-      entity.x = sidestep.x;
-      entity.z = sidestep.z;
+      sidestepActor(entity, entity.avoidDirection ?? (lateral >= 0 ? 1 : -1), dt * (entity.type === "baby" ? 2.8 : 2.35), now);
       if (now - state.lastCollisionAt > 700) {
         state.lastCollisionAt = now;
         showMessage(entity.type === "baby" ? "あぶない、あぶない" : `${entity.type === "kotaro" ? "虎太郎" : "ゆらぎ"}、通ります`);
+        if (entity.type === "baby") babyAlertSound(); else catMeow(entity.type);
       }
     }
   }
@@ -966,7 +1016,7 @@ function update(dt, now) {
       if (object) object.visible = false;
       if (shadow) shadow.visible = false;
     }
-    showMessage(`+${collected.grams.toFixed(1)} g`); tickSound();
+    showMessage(`+${collected.grams.toFixed(1)} g`); pickupSound();
   }
   ui.grams.textContent = state.grams.toFixed(1);
   ui.time.textContent = Math.ceil(state.remaining);
@@ -997,17 +1047,21 @@ function startGame() {
   ui.intro.hidden = true; ui.result.hidden = true; ui.controls.hidden = false;
   ui.robot.hidden = false;
   ui.grams.textContent = "0.0"; ui.time.textContent = "60";
+  bgm.currentTime = 0;
   ensureAudio();
 }
 
 function finish(hitHazard) {
   if (state.mode !== "playing") return;
   state.mode = "result"; input.suction = false;
+  bgm.pause();
+  canvas.dataset.bgm = "paused";
   ui.controls.hidden = true; ui.robot.hidden = true; ui.result.hidden = false;
   ui.resultGrams.textContent = state.grams.toFixed(1);
   ui.kotaroCount.textContent = `${state.counts.kotaro} ふわ`; ui.yuragiCount.textContent = `${state.counts.yuragi} ふわ`;
   ui.resultKicker.textContent = hitHazard ? "OOPS" : "CLEANUP COMPLETE";
   ui.resultCopy.textContent = hitHazard ? "そこは、吸わないほうがよかった。" : state.grams >= 10 ? "毛玉ひとつぶんの大収穫。" : state.grams >= 6 ? "今日も、いい毛でした。" : "ソファの下に、まだ気配がある。";
+  if (hitHazard) sparkleFailSound();
 }
 
 function showMessage(text) {
@@ -1016,17 +1070,72 @@ function showMessage(text) {
 }
 
 function ensureAudio() {
-  if (audio) return;
+  startBgm();
+  if (audio) {
+    if (audio.state === "suspended") audio.resume().then(() => { canvas.dataset.audioState = audio.state; });
+    else canvas.dataset.audioState = audio.state;
+    return;
+  }
   const AudioContext = window.AudioContext || window.webkitAudioContext;
-  if (AudioContext) audio = new AudioContext();
+  if (AudioContext) {
+    audio = new AudioContext();
+    canvas.dataset.audioState = audio.state;
+    if (audio.state === "suspended") audio.resume().then(() => { canvas.dataset.audioState = audio.state; });
+  }
 }
 
-function tickSound() {
+function startBgm() {
+  if (state.mode !== "playing" || !bgm.paused) return;
+  bgm.play().then(() => { canvas.dataset.bgm = "playing"; }).catch(() => { canvas.dataset.bgm = "waiting-for-touch"; });
+}
+
+function tone({ from, to = from, duration = .12, gainValue = .04, type = "sine", delay = 0 }) {
   if (!audio || audio.state !== "running") return;
+  const start = audio.currentTime + delay;
   const osc = audio.createOscillator(); const gain = audio.createGain();
-  osc.type = "sine"; osc.frequency.setValueAtTime(520, audio.currentTime); osc.frequency.exponentialRampToValueAtTime(820, audio.currentTime + .09);
-  gain.gain.setValueAtTime(.05, audio.currentTime); gain.gain.exponentialRampToValueAtTime(.001, audio.currentTime + .12);
-  osc.connect(gain).connect(audio.destination); osc.start(); osc.stop(audio.currentTime + .12);
+  osc.type = type; osc.frequency.setValueAtTime(from, start); osc.frequency.exponentialRampToValueAtTime(Math.max(20, to), start + duration);
+  gain.gain.setValueAtTime(.0001, start); gain.gain.exponentialRampToValueAtTime(gainValue, start + .012);
+  gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  osc.connect(gain).connect(audio.destination); osc.start(start); osc.stop(start + duration + .01);
+}
+
+function pickupSound() {
+  canvas.dataset.lastSound = "pickup";
+  tone({ from: 360, to: 760, duration: .11, gainValue: .035, type: "sine" });
+  tone({ from: 820, to: 1180, duration: .09, gainValue: .022, type: "triangle", delay: .045 });
+}
+
+function bumpSound() {
+  canvas.dataset.lastSound = "bump";
+  tone({ from: 150, to: 92, duration: .09, gainValue: .025, type: "triangle" });
+}
+
+function catMeow(type, sleepy = false) {
+  canvas.dataset.lastSound = sleepy ? `${type}-yawn` : `${type}-meow`;
+  if (!audio || audio.state !== "running") return;
+  const base = type === "kotaro" ? 430 : 500;
+  const duration = sleepy ? .4 : .27; const start = audio.currentTime;
+  const osc = audio.createOscillator(); const gain = audio.createGain();
+  osc.type = "triangle"; osc.frequency.setValueAtTime(base, start);
+  osc.frequency.exponentialRampToValueAtTime(sleepy ? base * .82 : base * 1.62, start + duration * .35);
+  osc.frequency.exponentialRampToValueAtTime(base * .68, start + duration);
+  gain.gain.setValueAtTime(.0001, start); gain.gain.exponentialRampToValueAtTime(.038, start + .025);
+  gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  osc.connect(gain).connect(audio.destination); osc.start(start); osc.stop(start + duration + .01);
+  tone({ from: base * .5, to: base * .38, duration: duration * .92, gainValue: .012, type: "sine", delay: .015 });
+}
+
+function babyAlertSound() {
+  canvas.dataset.lastSound = "baby-alert";
+  tone({ from: 620, to: 520, duration: .11, gainValue: .025, type: "sine" });
+  tone({ from: 720, to: 620, duration: .1, gainValue: .018, type: "sine", delay: .12 });
+}
+
+function sparkleFailSound() {
+  canvas.dataset.lastSound = "sparkle-fail";
+  tone({ from: 760, to: 980, duration: .13, gainValue: .026, type: "sine" });
+  tone({ from: 980, to: 1280, duration: .16, gainValue: .022, type: "triangle", delay: .09 });
+  tone({ from: 640, to: 420, duration: .25, gainValue: .018, type: "sine", delay: .2 });
 }
 
 function joystickMove(event) {
@@ -1050,7 +1159,7 @@ function resetControls() {
   ui.stick.style.transform = "translate(0, 0)";
 }
 
-ui.joystick.addEventListener("pointerdown", (event) => { input.joystickPointer = event.pointerId; input.anchorAngle = state.player.angle; ui.joystick.setPointerCapture(event.pointerId); joystickMove(event); });
+ui.joystick.addEventListener("pointerdown", (event) => { ensureAudio(); input.joystickPointer = event.pointerId; input.anchorAngle = state.player.angle; ui.joystick.setPointerCapture(event.pointerId); joystickMove(event); });
 ui.joystick.addEventListener("pointermove", joystickMove);
 ui.joystick.addEventListener("pointerup", joystickEnd);
 ui.joystick.addEventListener("pointercancel", joystickEnd);
@@ -1059,7 +1168,7 @@ window.addEventListener("pointerup", joystickEnd);
 window.addEventListener("pointercancel", resetControls);
 window.addEventListener("blur", resetControls);
 document.addEventListener("visibilitychange", () => { if (document.hidden) resetControls(); });
-window.addEventListener("keydown", (event) => { keys.add(event.key.length === 1 ? event.key.toLowerCase() : event.key); if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(event.key)) event.preventDefault(); });
+window.addEventListener("keydown", (event) => { ensureAudio(); keys.add(event.key.length === 1 ? event.key.toLowerCase() : event.key); if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(event.key)) event.preventDefault(); });
 window.addEventListener("keyup", (event) => keys.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key));
 window.addEventListener("resize", resize);
 ui.start.addEventListener("click", startGame);
@@ -1079,6 +1188,7 @@ async function init() {
     startGame();
     if (params.get("zone") === "sofa") { state.player.x = 3.15; state.player.z = 4.55; }
     if (params.get("zone") === "table") { state.player.x = -2.7; state.player.z = 5.45; }
+    if (params.get("hazard") === "v1") { state.player.x = .78; state.player.z = 1.55; state.player.angle = 0; }
     const focusedHairId = params.has("hair") ? Number(params.get("hair")) : Number.NaN;
     const focusedHair = state.hairs.find((hair) => hair.id === focusedHairId);
     if (focusedHair) {
