@@ -96,6 +96,7 @@ scene.add(camera);
 const world = new THREE.Group();
 scene.add(world);
 const hairObjects = new Map();
+const hairShadows = new Map();
 const characterObjects = new Map();
 const characterShadows = new Map();
 const characterAnimationTextures = new Map();
@@ -455,21 +456,31 @@ function createRobotBody() {
 
 function addHairObject(hair) {
   if (!hairAtlasTexture) return null;
-  const frame = hair.dropped ? 2 : hair.cat === "yuragi" && hair.id % 5 === 0 ? 7 : hair.id % 11 === 0 ? 5 : hair.id % 7 === 0 ? 6 : hair.id % 5 === 0 ? 4 : hair.id % 3 === 0 ? 3 : hair.id % 2 === 0 ? 1 : 0;
-  const kind = frame === 5 ? "giant" : frame === 3 || frame === 6 || frame === 7 ? "long" : "tuft";
+  const variant = hair.dropped ? 2 : hair.id % 8;
+  const kind = variant === 5 ? "giant" : variant === 3 || variant === 6 || variant === 7 ? "long" : "tuft";
   const map = hairAtlasTexture.clone();
   map.repeat.set(.25, .5);
-  map.offset.set((frame % 4) * .25, frame < 4 ? .5 : 0);
+  map.offset.set(.75, .5);
   map.needsUpdate = true;
   const material = new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, alphaTest: .06, toneMapped: false });
+  material.color.set(hair.cat === "yuragi" ? 0xfff4eb : 0xd9d5dc);
   material.rotation = ((hair.id * 47) % 11 - 5) * .035;
   const sprite = new THREE.Sprite(material);
-  const scales = [[.38,.18],[.32,.23],[.52,.31],[.78,.28],[.64,.36],[1.02,.5],[.72,.17],[.74,.29]];
-  const scale = scales[frame];
+  const scales = [[.34,.28],[.4,.3],[.48,.34],[.6,.36],[.58,.39],[.78,.46],[.66,.34],[.62,.38]];
+  const scale = scales[variant];
   sprite.scale.set(hair.id % 2 ? -scale[0] : scale[0], scale[1], 1); sprite.center.set(.5, .12); sprite.position.set(hair.x, .028, hair.z);
   sprite.userData.kind = kind;
-  sprite.userData.hairFrame = frame;
+  sprite.userData.hairFrame = variant;
   world.add(sprite); hairObjects.set(hair.id, sprite);
+
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(.5, 20),
+    new THREE.MeshBasicMaterial({ color: 0x574a59, transparent: true, opacity: .09, depthWrite: false, toneMapped: false }),
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.scale.set(Math.abs(scale[0]) * .65, Math.max(.055, scale[1] * .42), 1);
+  shadow.position.set(hair.x, .013, hair.z + .018);
+  world.add(shadow); hairShadows.set(hair.id, shadow);
   return sprite;
 }
 
@@ -480,7 +491,7 @@ async function buildGameObjects() {
   );
   const loaded = await Promise.all([
     ...animationEntries.map(({ path }) => loader.loadAsync(path)),
-    loader.loadAsync("./public/assets/animation/hair-collectibles-8-normalized.png"),
+    loader.loadAsync("./public/assets/animation/hair-collectibles-v2-normalized.png"),
   ]);
   const hairAtlas = loaded.pop();
   animationEntries.forEach(({ type, action }, index) => {
@@ -640,10 +651,15 @@ function syncScene(now, dt) {
   for (const hair of state.hairs) {
     const object = hairObjects.get(hair.id);
     if (!object) continue;
-    const lift = object.userData.kind === "long" ? .004 : .009;
+    const lift = object.userData.kind === "long" ? .0015 : .0025;
     object.position.set(hair.x, (object.userData.isStrandGroup ? .012 : .028) + Math.sin(now * .007 + hair.id * 1.7) * lift, hair.z);
     if (object.userData.isStrandGroup) object.rotation.y += Math.sin(now * .0013 + hair.id) * .00008;
     else object.material.rotation += Math.sin(now * .0013 + hair.id) * .00018;
+    const shadow = hairShadows.get(hair.id);
+    if (shadow) {
+      shadow.position.set(hair.x, .013, hair.z + .018);
+      shadow.visible = object.visible;
+    }
   }
   if (robotRing) robotRing.material.color.set(input.suction ? 0xa8eee4 : 0x8e87a6);
   if (suctionLight) suctionLight.intensity = input.suction ? 2.2 : .62;
@@ -723,7 +739,12 @@ function update(dt, now) {
   if (collected.grams) {
     state.grams = Math.round((state.grams + collected.grams) * 10) / 10;
     state.counts.kotaro += collected.kotaro; state.counts.yuragi += collected.yuragi;
-    for (const hair of state.hairs) if (hair.collected) { const object = hairObjects.get(hair.id); if (object) object.visible = false; }
+    for (const hair of state.hairs) if (hair.collected) {
+      const object = hairObjects.get(hair.id);
+      const shadow = hairShadows.get(hair.id);
+      if (object) object.visible = false;
+      if (shadow) shadow.visible = false;
+    }
     showMessage(`+${collected.grams.toFixed(1)} g`); tickSound();
   }
   ui.grams.textContent = state.grams.toFixed(1);
@@ -737,9 +758,18 @@ function startGame() {
   for (const [id, object] of hairObjects) {
     if (id >= state.hairs.length) {
       world.remove(object); object.material.dispose(); hairObjects.delete(id);
+      const shadow = hairShadows.get(id);
+      if (shadow) {
+        world.remove(shadow); shadow.geometry.dispose(); shadow.material.dispose(); hairShadows.delete(id);
+      }
     }
   }
-  for (const hair of state.hairs) { const object = hairObjects.get(hair.id); if (object) object.visible = true; }
+  for (const hair of state.hairs) {
+    const object = hairObjects.get(hair.id);
+    const shadow = hairShadows.get(hair.id);
+    if (object) object.visible = true;
+    if (shadow) shadow.visible = true;
+  }
   state.mode = "playing";
   ui.intro.hidden = true; ui.result.hidden = true; ui.controls.hidden = false;
   ui.robot.hidden = false;
