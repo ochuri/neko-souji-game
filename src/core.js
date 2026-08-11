@@ -8,6 +8,12 @@ export function circlesOverlap(a, ar, b, br) {
   return distance(a, b) < ar + br;
 }
 
+export function actorContactRadius(type) {
+  if (type === "baby") return .42;
+  if (type === "yuragi") return .5;
+  return .44;
+}
+
 export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }

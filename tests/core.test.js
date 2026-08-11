@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canVacuum, collectNearbyHair, collectTouchedHair, createDroppedHair, hitVomit, joystickHeading, keyboardTurn, normalizedAngle, resolveMovement, stepWanderer, turnToward } from "../src/core.js";
+import { actorContactRadius, canVacuum, circlesOverlap, collectNearbyHair, collectTouchedHair, createDroppedHair, hitVomit, joystickHeading, keyboardTurn, normalizedAngle, resolveMovement, stepWanderer, turnToward } from "../src/core.js";
+
+test("actor contact starts at the visible foot area, not the full sprite width", () => {
+  const robot = { x: 0, z: 0 };
+  const yuragi = { x: .9, z: 0 };
+  assert.equal(circlesOverlap(robot, .26, yuragi, actorContactRadius("yuragi")), false);
+  yuragi.x = .72;
+  assert.equal(circlesOverlap(robot, .26, yuragi, actorContactRadius("yuragi")), true);
+});
 
 test("vacuum only collects hair in front while suction is active", () => {
   const player = { x: 0, z: 0, angle: 0 };

@@ -1,5 +1,6 @@
 import * as THREE from "../public/vendor/three.module.js";
 import {
+  actorContactRadius,
   circlesOverlap,
   collectTouchedHair,
   createDroppedHair,
@@ -12,7 +13,7 @@ import {
   resolveMovement,
   stepWanderer,
   turnToward,
-} from "./core.js";
+} from "./core.js?v=pixel2";
 
 const canvas = document.querySelector("#game");
 const ui = {
@@ -113,6 +114,7 @@ let audio = null;
 let robotRing = null;
 let suctionLight = null;
 let hairAtlasTexture = null;
+const RENDER_SCALE = .62;
 
 const HAIR_VARIANTS = [
   { name: "tiny-fluff", frame: 0, scale: [.2, .13], parts: [[0,.065,0,.18,.13]] },
@@ -123,11 +125,11 @@ const HAIR_VARIANTS = [
 ];
 
 function playerActorRadius(entity) {
-  return entity.type === "baby" ? 2 : entity.type === "yuragi" ? 2.42 : 2.25;
+  return actorContactRadius(entity.type);
 }
 
 function actorFurnitureRadius(entity) {
-  return entity.type === "baby" ? 1 : entity.type === "yuragi" ? 1.38 : 1.28;
+  return entity.type === "baby" ? .4 : entity.type === "yuragi" ? .5 : .45;
 }
 
 function makeState() {
@@ -615,7 +617,7 @@ async function buildGameObjects() {
 function resize() {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
-  renderer.setSize(width, height, false);
+  renderer.setSize(Math.ceil(width * RENDER_SCALE), Math.ceil(height * RENDER_SCALE), false);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
 }
@@ -706,6 +708,7 @@ function syncScene(now, dt) {
   if (suctionLight) suctionLight.intensity = input.suction ? 2.2 : .62;
   canvas.dataset.view = "continuous-3d";
   canvas.dataset.world = "true-geometry";
+  canvas.dataset.pixelScale = RENDER_SCALE.toString();
   canvas.dataset.angle = visual.angle.toFixed(3);
   canvas.dataset.roster = state.wanderers.map((entity) => entity.id).join(",");
   canvas.dataset.droppedHairs = state.hairs.filter((hair) => hair.dropped).length.toString();
