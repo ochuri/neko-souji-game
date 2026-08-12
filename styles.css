@@ -225,27 +225,19 @@ button { font: inherit; }
 .intro-guide-icon {
   width: 64px;
   height: 54px;
-  overflow: visible;
-  color: rgba(255, 239, 226, .88);
+  object-fit: contain;
   filter: drop-shadow(0 2px 4px rgba(48, 30, 36, .25));
 }
-.intro-guide-icon path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.sound-notice {
+  position: relative;
+  margin: 17px 0 -14px;
+  color: rgba(255, 238, 226, .76);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .045em;
+  text-shadow: 0 2px 8px rgba(43, 27, 33, .36);
 }
-.vacuum-guide-icon .guide-vacuum { fill: rgba(255, 244, 232, .9); stroke: #6a5053; }
-.vacuum-guide-icon .guide-vacuum-dark { fill: #51454d; stroke: #493c44; }
-.vacuum-guide-icon .guide-vacuum-button { fill: #f2b5aa; stroke: #6a5053; stroke-width: 1.5; }
-.vacuum-guide-icon .guide-vacuum-light { stroke: #b7d8cf; stroke-width: 2.4; stroke-dasharray: 2 3; }
-.vacuum-guide-icon .guide-motion,
-.vacuum-guide-icon .guide-finger { stroke-width: 1.9; }
-.hair-guide-icon path:first-child { fill: rgba(239, 220, 202, .17); }
-.hair-guide-icon .guide-hair-wisp { stroke-width: 1.5; opacity: .76; }
-.cat-guide-icon path:first-child { fill: rgba(236, 203, 193, .1); }
-.cat-guide-icon .guide-scratch { stroke: #f0b7ad; stroke-width: 2; }
+.sound-notice span { margin-right: 5px; color: #f3b7b0; }
 .intro-panel .primary {
   position: relative;
   width: min(282px, 78vw);

@@ -1183,7 +1183,7 @@ function startGame() {
   canvas.dataset.endingBgm = "paused";
   if (previousMode === "result") bgm.currentTime = 0;
   const params = new URLSearchParams(location.search);
-  if (params.has("debug") && params.has("duration")) {
+  if (previousMode === "intro" && params.has("debug") && params.has("duration")) {
     state.remaining = Math.max(.1, Number(params.get("duration")) || 60);
     ui.time.textContent = Math.ceil(state.remaining).toString();
   }
@@ -1366,12 +1366,6 @@ window.addEventListener("keyup", (event) => keys.delete(event.key.length === 1 ?
 window.addEventListener("resize", resize);
 ui.start.addEventListener("click", startGame);
 ui.restart.addEventListener("click", startGame);
-ui.intro.addEventListener("pointerdown", ensureAudio, { passive: true });
-for (const eventName of ["pointerdown", "touchstart", "keydown"]) {
-  document.addEventListener(eventName, () => {
-    if (state.mode === "intro") ensureAudio();
-  }, { once: false, passive: true });
-}
 
 function frame(now) {
   const dt = Math.min(.035, (now - lastFrame) / 1000); lastFrame = now;
@@ -1387,9 +1381,6 @@ async function init() {
   canvas.dataset.mode = "intro";
   canvas.dataset.bgm = "waiting-for-touch";
   canvas.dataset.endingBgm = "paused";
-  // Browsers may block unprompted sound. Keep the intro frozen and retry from
-  // the first tap/keypress without starting the game itself.
-  startBgm();
   const params = new URLSearchParams(location.search);
   if (shouldAutostart(params)) {
     startGame();
