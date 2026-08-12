@@ -74,31 +74,48 @@
 
       <section id="result" class="panel result-panel" hidden>
         <div class="result-content">
-          <p id="result-kicker" class="result-kicker">CLEANUP COMPLETE</p>
+          <div class="result-kicker-row">
+            <img src="./public/assets/ui/result/complete-left.png" alt="" aria-hidden="true" />
+            <p id="result-kicker" class="result-kicker">CLEANUP COMPLETE</p>
+            <img src="./public/assets/ui/result/complete-right.png" alt="" aria-hidden="true" />
+          </div>
           <h2 class="result-score"><span id="result-grams">0.0</span><small>g</small></h2>
           <p id="result-copy" class="result-label">あつめた猫毛</p>
 
-          <div class="result-divider"><span aria-hidden="true">🐾</span></div>
+          <div class="result-divider"><img src="./public/assets/ui/result/divider-paw.png" alt="" aria-hidden="true" /></div>
           <dl class="cat-results">
             <div class="cat-result-row">
               <span class="cat-face cat-face-kotaro" role="img" aria-label="虎太郎の顔"></span>
               <dt>虎太郎の毛</dt>
               <dd><span id="kotaro-count">0.0</span><small>g</small></dd>
+              <img class="cat-row-hair" src="./public/assets/ui/result/hair-doodle.png" alt="" aria-hidden="true" />
+              <img class="cat-row-paw" src="./public/assets/ui/result/row-paw.png" alt="" aria-hidden="true" />
             </div>
             <div class="cat-result-row">
               <span class="cat-face cat-face-yuragi" role="img" aria-label="ゆらぎの顔"></span>
               <dt>ゆらぎの毛</dt>
               <dd><span id="yuragi-count">0.0</span><small>g</small></dd>
+              <img class="cat-row-hair" src="./public/assets/ui/result/hair-doodle.png" alt="" aria-hidden="true" />
             </div>
           </dl>
 
           <div class="remaining-result" aria-live="polite">
-            <span class="remaining-fluff" aria-hidden="true"></span>
+            <img class="remaining-fluff" src="./public/assets/ui/result/remaining-fluff.png" alt="" aria-hidden="true" />
+            <img class="remaining-footprints remaining-footprints-left" src="./public/assets/ui/result/footprints-left.png" alt="" aria-hidden="true" />
+            <img class="remaining-footprints remaining-footprints-right" src="./public/assets/ui/result/footprints-right.png" alt="" aria-hidden="true" />
             <p id="remaining-copy">お部屋には、あと0個の毛玉が残っています。</p>
           </div>
 
-          <button id="restart" class="primary result-restart" type="button">もういちど</button>
-          <p class="share-label">結果をシェアする</p>
+          <button id="restart" class="primary result-restart" type="button">
+            <img src="./public/assets/ui/result/button-paw.png" alt="" aria-hidden="true" />
+            <span>もういちど</span>
+            <img src="./public/assets/ui/result/button-paw.png" alt="" aria-hidden="true" />
+          </button>
+          <div class="share-label">
+            <img src="./public/assets/ui/result/share-mark.png" alt="" aria-hidden="true" />
+            <span>結果をシェアする</span>
+            <img class="share-mark-right" src="./public/assets/ui/result/share-mark.png" alt="" aria-hidden="true" />
+          </div>
           <div class="share-actions" aria-label="結果の共有先">
             <a id="share-x" class="share-button" href="https://twitter.com/intent/tweet" target="_blank" rel="noopener noreferrer" aria-label="Xで結果をシェア">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.4 2H22l-7.9 9 9.3 11H16l-5.8-7.6L3.6 22H0l8.5-9.7L-.4 2H7.2l5.2 6.9L18.4 2Zm-1.3 18h2L6.1 3.9H4L17.1 20Z" /></svg>
@@ -112,6 +129,6 @@
         </div>
       </section>
     </main>
-    <script type="module" src="./src/game.js?v=audio5"></script>
+    <script type="module" src="./src/game.js?v=result5"></script>
   </body>
 </html>
