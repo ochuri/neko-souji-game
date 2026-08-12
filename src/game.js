@@ -1130,6 +1130,9 @@ function update(dt, now) {
 }
 
 function startGame() {
+  document.activeElement?.blur();
+  window.scrollTo(0, 0);
+  document.getElementById("app")?.scrollTo(0, 0);
   state = makeState();
   vacuumWhooshCount = 0; lastVacuumSoundAt = 0; canvas.dataset.vacuumWhooshes = "0";
   vacuumSfx.pause(); vacuumSfx.currentTime = 0; canvas.dataset.vacuumSound = "ready";
