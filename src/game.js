@@ -1,6 +1,7 @@
 import * as THREE from "../public/vendor/three.module.js";
 import {
   actorContactRadius,
+  actorBumpReaction,
   collectTouchedHair,
   createDroppedHair,
   createInitialHair,
@@ -51,15 +52,18 @@ const CHARACTER_ANIMATIONS = {
     stretch: "./public/assets/animation/kotaro-stretch-8-normalized.png",
     scratch: "./public/assets/animation/kotaro-scratch-8-normalized.png",
     yawn: "./public/assets/animation/kotaro-yawn-8-normalized.png",
+    swat: "./public/assets/animation/kotaro-swat-8-normalized.png",
   },
   yuragi: {
     walk: "./public/assets/animation/yuragi-walk-8-normalized.png",
     stretch: "./public/assets/animation/yuragi-stretch-8-normalized.png",
     scratch: "./public/assets/animation/yuragi-scratch-8-normalized.png",
     yawn: "./public/assets/animation/yuragi-yawn-8-normalized.png",
+    swat: "./public/assets/animation/yuragi-swat-8-normalized.png",
   },
   baby: {
     crawl: "./public/assets/animation/baby-crawl-8-normalized.png",
+    cry: "./public/assets/animation/baby-cry-8-normalized.png",
   },
 };
 const ROSTERS = [["kotaro", "baby"], ["yuragi", "baby"], ["kotaro", "yuragi"]];
@@ -80,13 +84,15 @@ solids.push(
 const actorSolids = [
   ...solids,
   { id: "sofa-body", kind: "rect", x: sofa.x, z: sofa.z, w: sofa.w, d: sofa.d },
-  { id: "table-body", kind: "rect", x: tableArea.x, z: tableArea.z, w: tableArea.w, d: tableArea.d },
   // A chair is visually much wider than its four narrow legs. Actors must
   // steer around that visible footprint so their face/body never intersects
   // the seat even when the billboard turns toward the camera.
   { id: "chair-a-body", kind: "rect", x: -3.9, z: 4.6, w: 1.24, d: 1.24 },
   { id: "chair-b-body", kind: "rect", x: -4.0, z: 8.4, w: 1.24, d: 1.24 },
 ];
+// Characters are short enough to pass below the table top; only its legs and
+// the wider chair/sofa silhouettes remain physical obstacles for them.
+const actorTablePassage = { x: tableArea.x, z: tableArea.z, w: tableArea.w, d: tableArea.d };
 
 const vomits = [
   { id: "v1", x: .78, z: 2.8, radius: .38 },
@@ -128,7 +134,7 @@ const bgm = new Audio("./public/assets/audio/nekoge_loopA.wav");
 bgm.loop = true;
 bgm.preload = "auto";
 bgm.volume = .16;
-const endingBgm = new Audio("./public/assets/audio/ending_x6.flac");
+const endingBgm = new Audio("./public/assets/audio/enging.wav");
 endingBgm.loop = false;
 endingBgm.preload = "auto";
 endingBgm.volume = .28;
@@ -258,6 +264,8 @@ function makeState() {
     actionStartedAt: performance.now(),
     actionUntil: 0,
     actionIndex: 0,
+    bumpCount: 0,
+    lastActorBumpAt: 0,
   }));
   // The first actor enters through the open center aisle on every round. The
   // second remains elsewhere in the room, so the cast is present without all
@@ -849,13 +857,21 @@ function animationFrame(entity, now) {
     const sequence = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1];
     return sequence[Math.floor((now - entity.actionStartedAt) / 92) % sequence.length];
   }
+  if (entity.action === "cry") {
+    const sequence = [0, 1, 2, 3, 4, 5, 6, 5, 7, 6];
+    return sequence[Math.floor((now - entity.actionStartedAt) / 115) % sequence.length];
+  }
+  if (entity.action === "swat") {
+    const sequence = [0, 1, 2, 3, 4, 3, 5, 6, 7];
+    return sequence[Math.floor((now - entity.actionStartedAt) / 92) % sequence.length];
+  }
   const duration = Math.max(1, entity.actionUntil - entity.actionStartedAt);
   const progress = Math.min(.999, Math.max(0, (now - entity.actionStartedAt) / duration));
   return Math.min(7, Math.floor(progress * 8));
 }
 
 function setCharacterFrame(sprite, entity, now) {
-  const action = entity.type === "baby" ? "crawl" : entity.action;
+  const action = entity.action;
   const texture = characterAnimationTextures.get(`${entity.type}:${action}`);
   if (!texture) return;
   if (sprite.material.map !== texture) {
@@ -907,8 +923,9 @@ function syncScene(now, dt) {
     if (sprite.userData.facing === undefined) sprite.userData.facing = side < 0 ? -1 : 1;
     if (side > .22) sprite.userData.facing = 1;
     else if (side < -.22) sprite.userData.facing = -1;
-    sprite.scale.x = sprite.userData.facing * specWidth;
-    sprite.scale.y = specHeight;
+    const tableCrouch = entity.underTable && entity.type === "yuragi" ? .82 : 1;
+    sprite.scale.x = sprite.userData.facing * specWidth * tableCrouch;
+    sprite.scale.y = specHeight * tableCrouch;
     sprite.material.color.set(0xffffff);
     sprite.material.rotation = 0;
     const shadow = characterShadows.get(entity.id);
@@ -957,6 +974,8 @@ function syncScene(now, dt) {
   }).join(",");
   canvas.dataset.actorPositions = state.wanderers.map((entity) => `${entity.id}:${entity.x.toFixed(2)},${entity.z.toFixed(2)}`).join(";");
   canvas.dataset.actorFootY = state.wanderers.map((entity) => `${entity.id}:${(entity.footScreenY ?? 0).toFixed(1)}`).join(",");
+  canvas.dataset.actorUnderTable = state.wanderers.map((entity) => `${entity.id}:${entity.underTable ? 1 : 0}`).join(",");
+  canvas.dataset.actorBumps = state.wanderers.map((entity) => `${entity.id}:${entity.bumpCount || 0}`).join(",");
   canvas.dataset.hairVariants = new Set([...hairObjects.values()].filter((object) => object.visible).map((object) => object.userData.hairFrame)).size.toString();
   canvas.dataset.position = `${state.player.x.toFixed(2)},${state.player.z.toFixed(2)}`;
   canvas.dataset.under = under ? "sofa" : underTable ? "table" : "room";
@@ -994,6 +1013,27 @@ function pullNearbyHair(dt, now) {
   }
 }
 
+function registerActorBump(entity, now) {
+  if (entity.lastActorBumpAt && now - entity.lastActorBumpAt <= 900) return false;
+  const reaction = actorBumpReaction(entity.type, entity.bumpCount);
+  entity.bumpCount = reaction.bumpCount;
+  entity.lastActorBumpAt = now;
+  if (reaction.action === "cry") {
+    entity.action = "cry";
+    entity.actionStartedAt = now;
+    entity.actionUntil = now + 2900;
+    showMessage("びっくりしたよ〜！");
+    babyCrySound();
+  } else if (reaction.action === "swat") {
+    entity.action = "swat";
+    entity.actionStartedAt = now;
+    entity.actionUntil = now + 1700;
+    showMessage(`${entity.type === "kotaro" ? "虎太郎" : "ゆらぎ"}、むっ！ ぺしっ`);
+    catSwatSound(entity.type);
+  }
+  return true;
+}
+
 function update(dt, now) {
   if (state.mode !== "playing") return;
   state.remaining = Math.max(0, state.remaining - dt);
@@ -1018,6 +1058,10 @@ function update(dt, now) {
   if (resolved.hit && now - state.lastCollisionAt > 450) { state.lastCollisionAt = now; showMessage("こつん"); bumpSound(); }
   state.player.x = resolved.x; state.player.z = resolved.z;
   for (const entity of state.wanderers) {
+    if (entity.debugBumpAt && now >= entity.debugBumpAt) {
+      entity.debugBumpAt = 0;
+      registerActorBump(entity, now);
+    }
     const entityBeforeUpdate = { x: entity.x, z: entity.z };
     if (entity.type !== "baby" && now >= entity.scratchAt && now >= entity.actionUntil) {
       const actions = ["scratch", "stretch", "yawn"];
@@ -1032,7 +1076,7 @@ function update(dt, now) {
       if (nextAction === "yawn") catMeow(entity.type, true);
     }
     if (now < entity.actionUntil) {
-      if (!entity.scratchDropped) {
+      if (entity.action === "scratch" && !entity.scratchDropped) {
         entity.scratchDropped = true;
         const dropped = createDroppedHair(entity, Math.max(...state.hairs.map((hair) => hair.id)) + 1);
         state.hairs.push(dropped);
@@ -1042,7 +1086,10 @@ function update(dt, now) {
     } else {
       entity.action = entity.type === "baby" ? "crawl" : "walk";
       const entityBeforeMove = { x: entity.x, z: entity.z };
-      if (entity.type === "baby") stepBabyPatrol(entity, dt);
+      if (entity.debugFreeze) {
+        entity.angle = Math.PI;
+        entity.targetAngle = entity.angle;
+      } else if (entity.type === "baby") stepBabyPatrol(entity, dt);
       else stepWanderer(entity, dt, now);
       const actorResolved = resolveMovement(entityBeforeMove, entity, actorMovementSolids(entity), actorFurnitureRadius(entity));
       entity.x = actorResolved.x;
@@ -1052,6 +1099,7 @@ function update(dt, now) {
         entity.turnAt = now + 650;
       }
     }
+    entity.underTable = isInsideRect(entity, actorTablePassage);
     // Characters use a fixed world scale. They notice the robot before their
     // visible body reaches it and walk aside without creating an invisible wall.
     const avoidDx = entity.x - state.player.x;
@@ -1063,13 +1111,13 @@ function update(dt, now) {
     const playerMoveDistance = Math.hypot(playerMoveX, playerMoveZ);
     const avoidanceRange = entity.type === "baby" ? 3.3 : 2.05;
     const avoidanceSpeed = entity.type === "baby" ? 3.2 : 2.4;
-    if (entity.type === "baby" && playerMoveDistance > .001 && avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .88) {
+    if (!entity.debugContact && entity.type === "baby" && playerMoveDistance > .001 && avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .88) {
       entity.evading = true;
       entity.x = Math.min(.7, entity.x + dt * avoidanceSpeed);
       entity.patrolDirection = 1;
       entity.angle = Math.PI / 2;
       entity.targetAngle = entity.angle;
-    } else if (playerMoveDistance > .001 && avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .88) {
+    } else if (!entity.debugContact && playerMoveDistance > .001 && avoidForward > .2 && avoidForward < avoidanceRange && Math.abs(avoidRight) < .88) {
       const direction = entity.avoidDirection ?? (avoidRight >= 0 ? 1 : -1);
       sidestepActor(entity, direction, dt * avoidanceSpeed, now);
     } else if (entity.type === "baby" && entity.evading && (avoidForward <= -.35 || avoidForward >= avoidanceRange + .4)) {
@@ -1117,8 +1165,11 @@ function update(dt, now) {
       }
       if (now - state.lastCollisionAt > 700) {
         state.lastCollisionAt = now;
-        showMessage(entity.type === "baby" ? "あぶない、あぶない" : `${entity.type === "kotaro" ? "虎太郎" : "ゆらぎ"}、通ります`);
-        if (entity.type === "baby") babyAlertSound(); else catMeow(entity.type);
+        const reacted = registerActorBump(entity, now) && (entity.action === "cry" || entity.action === "swat");
+        if (!reacted) {
+          showMessage(entity.type === "baby" ? "あぶない、あぶない" : `${entity.type === "kotaro" ? "虎太郎" : "ゆらぎ"}、通ります`);
+          if (entity.type === "baby") babyAlertSound(); else catMeow(entity.type);
+        }
       }
     }
   }
@@ -1320,6 +1371,32 @@ function babyAlertSound() {
   tone({ from: 720, to: 620, duration: .1, gainValue: .018, type: "sine", delay: .12 });
 }
 
+function babyCrySound() {
+  canvas.dataset.lastSound = "baby-cry";
+  if (!audio || audio.state !== "running") return;
+  const start = audio.currentTime;
+  [0, .22, .44].forEach((delay, index) => {
+    const oscillator = audio.createOscillator();
+    const gain = audio.createGain();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(560 - index * 35, start + delay);
+    oscillator.frequency.exponentialRampToValueAtTime(350, start + delay + .19);
+    gain.gain.setValueAtTime(.0001, start + delay);
+    gain.gain.exponentialRampToValueAtTime(.06 * SFX_LEVEL, start + delay + .025);
+    gain.gain.exponentialRampToValueAtTime(.0001, start + delay + .2);
+    oscillator.connect(gain).connect(audio.destination);
+    oscillator.start(start + delay);
+    oscillator.stop(start + delay + .21);
+  });
+}
+
+function catSwatSound(type) {
+  canvas.dataset.lastSound = `${type}-swat`;
+  catMeow(type);
+  canvas.dataset.lastSound = `${type}-swat`;
+  tone({ from: 190, to: 105, duration: .08, gainValue: .04, type: "triangle", delay: .12 });
+}
+
 function sparkleFailSound() {
   canvas.dataset.lastSound = "sparkle-fail";
   tone({ from: 760, to: 980, duration: .13, gainValue: .026, type: "sine" });
@@ -1420,21 +1497,52 @@ async function init() {
       if (actor) {
         const actorZone = params.get("actorZone");
         if (actorZone === "sofa") { actor.x = sofa.x; actor.z = 3.7; actor.angle = 0; }
-        else if (actorZone === "table") { actor.x = .1; actor.z = 3.65; actor.angle = Math.PI / 2; }
+        else if (actorZone === "table") {
+          actor.x = tableArea.x;
+          actor.z = actor.type === "yuragi" ? tableArea.z - .82 : tableArea.z;
+          actor.angle = Math.PI / 2;
+          state.player.x = tableArea.x;
+          state.player.z = tableArea.z - (actor.type === "yuragi" ? 2.95 : 2.05);
+          state.player.angle = 0;
+          visual.x = state.player.x;
+          visual.z = state.player.z;
+          visual.angle = 0;
+        }
         else if (actor.type === "baby") { actor.x = .1; actor.z = 3.65; actor.angle = Math.PI / 2; }
         else { actor.x = 0; actor.z = 3.8; actor.angle = Math.PI; }
         // Debug routes are visual proof routes: isolate the requested actor so
         // another roster member cannot be mistaken for the target.
         state.wanderers = [actor];
+        if (params.has("bumps")) {
+          actor.bumpCount = Math.max(0, Number(params.get("bumps")) || 0);
+          actor.debugContact = true;
+          actor.x = state.player.x + (actor.type === "baby" ? .28 : .08);
+          actor.z = state.player.z + (actor.type === "baby" ? 1.72 : 2.15);
+          actor.speed = 0;
+          actor.actionUntil = 0;
+          actor.debugFreeze = true;
+          actor.debugBumpAt = performance.now() + 350;
+          input.x = 0;
+          input.y = 0;
+          keys.clear();
+        }
       }
     }
     const forcedAction = params.get("action") || (params.has("scratch") ? "scratch" : null);
     if (forcedAction) {
-      const cat = state.wanderers.find((entity) => entity.type !== "baby");
-      if (cat) {
-        cat.forcedAction = forcedAction;
-        cat.scratchAt = 0;
-        if (requestedActor) cat.debugActionDuration = forcedAction === "scratch" ? 10000 : forcedAction === "stretch" ? 10000 : 1850;
+      const target = forcedAction === "cry"
+        ? state.wanderers.find((entity) => entity.type === "baby")
+        : state.wanderers.find((entity) => entity.type !== "baby");
+      if (target) {
+        target.forcedAction = forcedAction;
+        if (forcedAction === "cry" || forcedAction === "swat") {
+          target.action = forcedAction;
+          target.actionStartedAt = performance.now();
+          target.actionUntil = target.actionStartedAt + 60000;
+        } else {
+          target.scratchAt = 0;
+          if (requestedActor) target.debugActionDuration = forcedAction === "scratch" ? 10000 : forcedAction === "stretch" ? 10000 : 1850;
+        }
       }
     }
     if (params.get("result") === "clear") {

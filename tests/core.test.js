@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actorContactRadius, canVacuum, circlesOverlap, collectNearbyHair, collectTouchedHair, createDroppedHair, hitVomit, joystickHeading, keyboardTurn, normalizedAngle, resolveMovement, shouldAutostart, stepWanderer, sweptCirclesOverlap, sweptEllipseOverlap, turnToward } from "../src/core.js";
+import { actorBumpReaction, actorContactRadius, canVacuum, circlesOverlap, collectNearbyHair, collectTouchedHair, createDroppedHair, hitVomit, joystickHeading, keyboardTurn, normalizedAngle, resolveMovement, shouldAutostart, stepWanderer, sweptCirclesOverlap, sweptEllipseOverlap, turnToward } from "../src/core.js";
 
 test("autostart is restricted to explicit debug routes", () => {
   assert.equal(shouldAutostart(new URLSearchParams("autostart=1")), false);
@@ -28,6 +28,24 @@ test("actor foot collision is wide sideways without stopping early in front", ()
   const still = { x: 0, z: 0 };
   assert.equal(sweptEllipseOverlap(still, still, { x: .53, z: .16 }, { x: .53, z: .16 }, .64, .43, 0), true);
   assert.equal(sweptEllipseOverlap(still, still, { x: 0, z: .5 }, { x: 0, z: .5 }, .64, .43, 0), false);
+});
+
+test("the second robot bump triggers the character-specific reaction", () => {
+  assert.deepEqual(actorBumpReaction("baby", 0), { bumpCount: 1, action: null });
+  assert.deepEqual(actorBumpReaction("baby", 1), { bumpCount: 2, action: "cry" });
+  assert.deepEqual(actorBumpReaction("kotaro", 1), { bumpCount: 2, action: "swat" });
+  assert.deepEqual(actorBumpReaction("yuragi", 1), { bumpCount: 2, action: "swat" });
+});
+
+test("actors can cross under the table top while still avoiding each leg", () => {
+  const tableLegs = [
+    { id: "left-leg", kind: "circle", x: -4.45, z: 5.5, radius: .18 },
+    { id: "right-leg", kind: "circle", x: -.95, z: 5.5, radius: .18 },
+  ];
+  const center = resolveMovement({ x: -2.7, z: 5.2 }, { x: -2.7, z: 6.55 }, tableLegs, .48);
+  assert.equal(center.hit, null);
+  const leg = resolveMovement({ x: -4.45, z: 5.0 }, { x: -4.45, z: 5.5 }, tableLegs, .48);
+  assert.equal(leg.hit, "left-leg");
 });
 
 test("vacuum only collects hair in front while suction is active", () => {

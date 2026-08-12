@@ -55,6 +55,12 @@ export function actorContactRadius(type) {
   return .08;
 }
 
+export function actorBumpReaction(type, previousCount = 0) {
+  const bumpCount = previousCount + 1;
+  if (bumpCount < 2) return { bumpCount, action: null };
+  return { bumpCount, action: type === "baby" ? "cry" : "swat" };
+}
+
 export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }

@@ -52,8 +52,24 @@ def make_transparent(crop: Image.Image) -> Image.Image:
     return rgba
 
 
+def remove_dark_panel_residue(icon: Image.Image) -> Image.Image:
+    """Keep the approved pale linework while removing dark comp artefacts."""
+    pixels = icon.load()
+    for y in range(icon.height):
+        for x in range(icon.width):
+            red, green, blue, alpha = pixels[x, y]
+            luminance = red * 0.299 + green * 0.587 + blue * 0.114
+            if not alpha:
+                continue
+            cleaned_alpha = max(0, min(255, round((luminance - 150) / 80 * 255)))
+            pixels[x, y] = (red, green, blue, cleaned_alpha)
+    return icon
+
+
 OUTPUT.mkdir(parents=True, exist_ok=True)
 source = Image.open(SOURCE)
 for filename, bounds in CROPS.items():
     icon = make_transparent(source.crop(bounds))
+    if filename == "guide-scratch.png":
+        icon = remove_dark_panel_residue(icon)
     icon.save(OUTPUT / filename, optimize=True)
