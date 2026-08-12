@@ -181,6 +181,10 @@ export function hitVomit(player, vomits, radius = .31) {
   return vomits.some((item) => circlesOverlap(player, radius, item, item.radius));
 }
 
+export function shouldAutostart(params) {
+  return params.has("debug") && params.has("autostart");
+}
+
 export function createInitialHair() {
   const raw = [
     [2.4, 3.2, .6, "kotaro"], [.62, 1.95, .8, "yuragi"], [-4.75, 2.7, .7, "kotaro"],

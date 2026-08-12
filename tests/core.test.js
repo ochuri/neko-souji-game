@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actorContactRadius, canVacuum, circlesOverlap, collectNearbyHair, collectTouchedHair, createDroppedHair, hitVomit, joystickHeading, keyboardTurn, normalizedAngle, resolveMovement, stepWanderer, sweptCirclesOverlap, sweptEllipseOverlap, turnToward } from "../src/core.js";
+import { actorContactRadius, canVacuum, circlesOverlap, collectNearbyHair, collectTouchedHair, createDroppedHair, hitVomit, joystickHeading, keyboardTurn, normalizedAngle, resolveMovement, shouldAutostart, stepWanderer, sweptCirclesOverlap, sweptEllipseOverlap, turnToward } from "../src/core.js";
+
+test("autostart is restricted to explicit debug routes", () => {
+  assert.equal(shouldAutostart(new URLSearchParams("autostart=1")), false);
+  assert.equal(shouldAutostart(new URLSearchParams("autostart=1&debug=1")), true);
+  assert.equal(shouldAutostart(new URLSearchParams("debug=1")), false);
+});
 
 test("actor contact starts at the visible foot area, not the full sprite width", () => {
   const robot = { x: 0, z: 0 };

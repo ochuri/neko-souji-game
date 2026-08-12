@@ -10,6 +10,7 @@ import {
   keyboardTurn,
   normalizedAngle,
   resolveMovement,
+  shouldAutostart,
   stepWanderer,
   sweptEllipseOverlap,
   turnToward,
@@ -127,6 +128,10 @@ const bgm = new Audio("./public/assets/audio/nekoge_loopA.wav");
 bgm.loop = true;
 bgm.preload = "auto";
 bgm.volume = .16;
+const endingBgm = new Audio("./public/assets/audio/ending_x6.flac");
+endingBgm.loop = false;
+endingBgm.preload = "auto";
+endingBgm.volume = .28;
 const vacuumSfx = new Audio("./public/assets/audio/vacuum_1s.wav");
 vacuumSfx.preload = "auto";
 vacuumSfx.volume = 1;
@@ -136,6 +141,9 @@ let vacuumWhooshCount = 0;
 let robotRing = null;
 let suctionLight = null;
 let hairAtlasTexture = null;
+canvas.dataset.bgmSrc = bgm.getAttribute("src");
+canvas.dataset.endingBgmSrc = endingBgm.getAttribute("src");
+canvas.dataset.endingBgmVolume = endingBgm.volume.toString();
 const projectedActorFoot = new THREE.Vector3();
 const RENDER_SCALE = .82;
 const OUTLINE_COLOR = 0x49313b;
@@ -1136,13 +1144,15 @@ function update(dt, now) {
 }
 
 function startGame() {
+  const previousMode = state.mode;
   document.activeElement?.blur();
   window.scrollTo(0, 0);
   document.getElementById("app")?.scrollTo(0, 0);
   state = makeState();
   vacuumWhooshCount = 0; lastVacuumSoundAt = 0; canvas.dataset.vacuumWhooshes = "0";
   vacuumSfx.pause(); vacuumSfx.currentTime = 0; canvas.dataset.vacuumSound = "ready";
-  input.x = 0; input.y = 0; input.suction = false; input.anchorAngle = state.player.angle;
+  resetControls();
+  input.suction = false; input.anchorAngle = state.player.angle;
   visual.x = state.player.x; visual.z = state.player.z; visual.angle = state.player.angle; visual.pitch = .025;
   for (const [id, object] of hairObjects) {
     if (id >= state.hairs.length) {
@@ -1162,19 +1172,28 @@ function startGame() {
     if (shadow) shadow.visible = true;
   }
   state.mode = "playing";
+  canvas.dataset.mode = "playing";
   ui.intro.hidden = true; ui.result.hidden = true; ui.controls.hidden = false;
   ui.robot.hidden = false;
   ui.suctionFx.classList.remove("active");
   ui.grams.textContent = "0.0"; ui.time.textContent = "60";
   canvas.dataset.sfxLevel = SFX_LEVEL.toString();
   canvas.dataset.bgmVolume = bgm.volume.toString();
-  bgm.currentTime = 0;
+  endingBgm.pause(); endingBgm.currentTime = 0;
+  canvas.dataset.endingBgm = "paused";
+  if (previousMode === "result") bgm.currentTime = 0;
+  const params = new URLSearchParams(location.search);
+  if (params.has("debug") && params.has("duration")) {
+    state.remaining = Math.max(.1, Number(params.get("duration")) || 60);
+    ui.time.textContent = Math.ceil(state.remaining).toString();
+  }
   ensureAudio();
 }
 
 function finish(hitHazard) {
   if (state.mode !== "playing") return;
   state.mode = "result"; input.suction = false;
+  canvas.dataset.mode = "result";
   bgm.pause();
   vacuumSfx.pause(); vacuumSfx.currentTime = 0;
   canvas.dataset.bgm = "paused";
@@ -1189,6 +1208,7 @@ function finish(hitHazard) {
   ui.resultKicker.textContent = hitHazard ? "OOPS" : "CLEANUP COMPLETE";
   ui.resultCopy.textContent = hitHazard ? "そこまでに、あつめた猫毛" : "あつめた猫毛";
   updateShareLinks();
+  if (!hitHazard) startEndingBgm();
   if (hitHazard) sparkleFailSound();
 }
 
@@ -1217,7 +1237,7 @@ function showMessage(text, kind = "") {
 }
 
 function ensureAudio() {
-  startBgm();
+  startCurrentBgm();
   if (audio) {
     if (audio.state === "suspended") audio.resume().then(() => { canvas.dataset.audioState = audio.state; });
     else canvas.dataset.audioState = audio.state;
@@ -1231,9 +1251,21 @@ function ensureAudio() {
   }
 }
 
+function startCurrentBgm() {
+  if (state.mode === "result") startEndingBgm();
+  else startBgm();
+}
+
 function startBgm() {
-  if (state.mode !== "playing" || !bgm.paused) return;
+  if (state.mode === "result" || !bgm.paused) return;
   bgm.play().then(() => { canvas.dataset.bgm = "playing"; }).catch(() => { canvas.dataset.bgm = "waiting-for-touch"; });
+}
+
+function startEndingBgm() {
+  if (state.mode !== "result" || !endingBgm.paused || endingBgm.ended) return;
+  endingBgm.play()
+    .then(() => { canvas.dataset.endingBgm = "playing"; })
+    .catch(() => { canvas.dataset.endingBgm = "waiting-for-touch"; });
 }
 
 function tone({ from, to = from, duration = .12, gainValue = .04, type = "sine", delay = 0 }) {
@@ -1334,18 +1366,32 @@ window.addEventListener("keyup", (event) => keys.delete(event.key.length === 1 ?
 window.addEventListener("resize", resize);
 ui.start.addEventListener("click", startGame);
 ui.restart.addEventListener("click", startGame);
+ui.intro.addEventListener("pointerdown", ensureAudio, { passive: true });
+for (const eventName of ["pointerdown", "touchstart", "keydown"]) {
+  document.addEventListener(eventName, () => {
+    if (state.mode === "intro") ensureAudio();
+  }, { once: false, passive: true });
+}
 
 function frame(now) {
   const dt = Math.min(.035, (now - lastFrame) / 1000); lastFrame = now;
-  update(dt, now); syncScene(now, dt); renderer.render(scene, camera); requestAnimationFrame(frame);
+  update(dt, now);
+  if (state.mode === "playing") syncScene(now, dt);
+  renderer.render(scene, camera); requestAnimationFrame(frame);
 }
 
 async function init() {
   ui.start.disabled = true;
   buildRoom(); createRobotBody(); await Promise.all([buildBackWallArt(), buildSideWallArt(), buildGameObjects()]); resize(); syncScene(performance.now(), 1 / 60);
   ui.start.disabled = false; ui.controls.hidden = true; requestAnimationFrame(frame);
+  canvas.dataset.mode = "intro";
+  canvas.dataset.bgm = "waiting-for-touch";
+  canvas.dataset.endingBgm = "paused";
+  // Browsers may block unprompted sound. Keep the intro frozen and retry from
+  // the first tap/keypress without starting the game itself.
+  startBgm();
   const params = new URLSearchParams(location.search);
-  if (params.has("autostart")) {
+  if (shouldAutostart(params)) {
     startGame();
     if (params.get("zone") === "sofa") { state.player.x = 3.15; state.player.z = 4.55; }
     if (params.get("zone") === "table") { state.player.x = -2.7; state.player.z = 5.45; }
