@@ -36,7 +36,7 @@ test("collection returns exact grams and breed counts", () => {
     { x: 0, z: 1, grams: .7, cat: "kotaro", collected: false },
     { x: .1, z: 1.4, grams: .9, cat: "yuragi", collected: false },
   ];
-  assert.deepEqual(collectNearbyHair({ x: 0, z: 0, angle: 0 }, hairs, true), { grams: 1.6, kotaro: 1, yuragi: 1 });
+  assert.deepEqual(collectNearbyHair({ x: 0, z: 0, angle: 0 }, hairs, true), { grams: 1.6, kotaro: 1, yuragi: 1, kotaroGrams: .7, yuragiGrams: .9 });
   assert.equal(hairs.every((hair) => hair.collected), true);
 });
 
@@ -45,7 +45,7 @@ test("robot automatically collects hair it drives over", () => {
     { x: .3, z: .2, grams: .7, cat: "kotaro", collected: false },
     { x: 1.2, z: 0, grams: .9, cat: "yuragi", collected: false },
   ];
-  assert.deepEqual(collectTouchedHair({ x: 0, z: 0 }, hairs), { grams: .7, kotaro: 1, yuragi: 0 });
+  assert.deepEqual(collectTouchedHair({ x: 0, z: 0 }, hairs), { grams: .7, kotaro: 1, yuragi: 0, kotaroGrams: .7, yuragiGrams: 0 });
   assert.equal(hairs[0].collected, true);
   assert.equal(hairs[1].collected, false);
 });
@@ -98,6 +98,6 @@ test("a scratching cat drops a new collectible hair beside itself", () => {
   assert.equal(hair.dropped, true);
   assert.equal(hair.collected, false);
   assert.ok(Math.hypot(hair.x - 2, hair.z - 3) > .3);
-  assert.deepEqual(collectTouchedHair({ x: hair.x, z: hair.z }, [hair]), { grams: .8, kotaro: 0, yuragi: 1 });
+  assert.deepEqual(collectTouchedHair({ x: hair.x, z: hair.z }, [hair]), { grams: .8, kotaro: 0, yuragi: 1, kotaroGrams: 0, yuragiGrams: .8 });
   assert.equal(hair.collected, true);
 });

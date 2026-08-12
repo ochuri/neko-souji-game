@@ -119,28 +119,32 @@ export function collectNearbyHair(player, hairs, suction) {
   let grams = 0;
   let kotaro = 0;
   let yuragi = 0;
+  let kotaroGrams = 0;
+  let yuragiGrams = 0;
   for (const hair of hairs) {
     if (!canVacuum(player, hair, suction)) continue;
     hair.collected = true;
     grams += hair.grams;
-    if (hair.cat === "kotaro") kotaro += 1;
-    else yuragi += 1;
+    if (hair.cat === "kotaro") { kotaro += 1; kotaroGrams += hair.grams; }
+    else { yuragi += 1; yuragiGrams += hair.grams; }
   }
-  return { grams, kotaro, yuragi };
+  return { grams, kotaro, yuragi, kotaroGrams, yuragiGrams };
 }
 
 export function collectTouchedHair(player, hairs, maxDistance = .55) {
   let grams = 0;
   let kotaro = 0;
   let yuragi = 0;
+  let kotaroGrams = 0;
+  let yuragiGrams = 0;
   for (const hair of hairs) {
     if (hair.collected || distance(player, hair) > maxDistance) continue;
     hair.collected = true;
     grams += hair.grams;
-    if (hair.cat === "kotaro") kotaro += 1;
-    else yuragi += 1;
+    if (hair.cat === "kotaro") { kotaro += 1; kotaroGrams += hair.grams; }
+    else { yuragi += 1; yuragiGrams += hair.grams; }
   }
-  return { grams, kotaro, yuragi };
+  return { grams, kotaro, yuragi, kotaroGrams, yuragiGrams };
 }
 
 export function createDroppedHair(entity, id) {

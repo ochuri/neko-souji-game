@@ -26,6 +26,9 @@ const ui = {
   resultKicker: document.querySelector("#result-kicker"),
   kotaroCount: document.querySelector("#kotaro-count"),
   yuragiCount: document.querySelector("#yuragi-count"),
+  remainingCopy: document.querySelector("#remaining-copy"),
+  shareX: document.querySelector("#share-x"),
+  shareThreads: document.querySelector("#share-threads"),
   start: document.querySelector("#start"),
   restart: document.querySelector("#restart"),
   controls: document.querySelector("#controls"),
@@ -262,6 +265,7 @@ function makeState() {
     hairs: createInitialHair(),
     grams: 0,
     counts: { kotaro: 0, yuragi: 0 },
+    gramsByCat: { kotaro: 0, yuragi: 0 },
     remaining: 60,
     lastCollisionAt: 0,
     wanderers,
@@ -1117,6 +1121,8 @@ function update(dt, now) {
   if (collected.grams) {
     state.grams = Math.round((state.grams + collected.grams) * 10) / 10;
     state.counts.kotaro += collected.kotaro; state.counts.yuragi += collected.yuragi;
+    state.gramsByCat.kotaro = Math.round((state.gramsByCat.kotaro + collected.kotaroGrams) * 10) / 10;
+    state.gramsByCat.yuragi = Math.round((state.gramsByCat.yuragi + collected.yuragiGrams) * 10) / 10;
     for (const hair of state.hairs) if (hair.collected) {
       const object = hairObjects.get(hair.id);
       const shadow = hairShadows.get(hair.id);
@@ -1175,10 +1181,31 @@ function finish(hitHazard) {
   ui.controls.hidden = true; ui.robot.hidden = true; ui.result.hidden = false;
   ui.suctionFx.classList.remove("active");
   ui.resultGrams.textContent = state.grams.toFixed(1);
-  ui.kotaroCount.textContent = `${state.counts.kotaro} ふわ`; ui.yuragiCount.textContent = `${state.counts.yuragi} ふわ`;
+  ui.kotaroCount.textContent = state.gramsByCat.kotaro.toFixed(1);
+  ui.yuragiCount.textContent = state.gramsByCat.yuragi.toFixed(1);
+  const remainingHairs = state.hairs.filter((hair) => !hair.collected).length;
+  ui.remainingCopy.textContent = `お部屋には、あと${remainingHairs}個の毛玉が残っています。`;
+  ui.result.dataset.remaining = remainingHairs.toString();
   ui.resultKicker.textContent = hitHazard ? "OOPS" : "CLEANUP COMPLETE";
-  ui.resultCopy.textContent = hitHazard ? "そこは、吸わないほうがよかった。" : state.grams >= 10 ? "毛玉ひとつぶんの大収穫。" : state.grams >= 6 ? "今日も、いい毛でした。" : "ソファの下に、まだ気配がある。";
+  ui.resultCopy.textContent = hitHazard ? "そこまでに、あつめた猫毛" : "あつめた猫毛";
+  updateShareLinks();
   if (hitHazard) sparkleFailSound();
+}
+
+function shareText() {
+  const remainingHairs = state.hairs.filter((hair) => !hair.collected).length;
+  return `「ねこ毛、いただきます。」で${state.grams.toFixed(1)}gの猫毛を集めました！\n虎太郎 ${state.gramsByCat.kotaro.toFixed(1)}g・ゆらぎ ${state.gramsByCat.yuragi.toFixed(1)}g\nお部屋には、あと${remainingHairs}個の毛玉が残っています。\n#ねこ毛いただきます`;
+}
+
+function cleanShareUrl() {
+  return `${location.origin}${location.pathname}`;
+}
+
+function updateShareLinks() {
+  const params = new URLSearchParams({ text: shareText(), url: cleanShareUrl() });
+  ui.shareX.href = `https://twitter.com/intent/tweet?${params}`;
+  const text = `${shareText()}\n${cleanShareUrl()}`;
+  ui.shareThreads.href = `https://www.threads.net/intent/post?text=${encodeURIComponent(text)}`;
 }
 
 function showMessage(text, kind = "") {
@@ -1372,6 +1399,13 @@ async function init() {
         cat.scratchAt = 0;
         if (requestedActor) cat.debugActionDuration = forcedAction === "scratch" ? 10000 : forcedAction === "stretch" ? 10000 : 1850;
       }
+    }
+    if (params.get("result") === "clear") {
+      state.grams = 12.8;
+      state.gramsByCat.kotaro = 6.9;
+      state.gramsByCat.yuragi = 5.9;
+      for (const hair of state.hairs.slice(0, Math.max(0, state.hairs.length - 6))) hair.collected = true;
+      finish(false);
     }
   }
 }

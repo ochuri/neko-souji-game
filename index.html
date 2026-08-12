@@ -7,7 +7,7 @@
     <meta name="description" content="掃除機目線で猫毛を集める60秒のスマホゲーム" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='25' font-size='24'%3E🐾%3C/text%3E%3C/svg%3E" />
     <title>ねこ毛、いただきます。</title>
-    <link rel="stylesheet" href="./styles.css?v=start72" />
+    <link rel="stylesheet" href="./styles.css?v=result1" />
   </head>
   <body>
     <main id="app" aria-label="ねこ毛掃除ゲーム">
@@ -87,16 +87,45 @@
       </section>
 
       <section id="result" class="panel result-panel" hidden>
-        <p id="result-kicker" class="eyeline">CLEANUP COMPLETE</p>
-        <h2><span id="result-grams">0.0</span><small> g</small></h2>
-        <p id="result-copy">今日も、いい毛でした。</p>
-        <dl>
-          <div><dt>虎太郎の毛</dt><dd id="kotaro-count">0</dd></div>
-          <div><dt>ゆらぎの毛</dt><dd id="yuragi-count">0</dd></div>
-        </dl>
-        <button id="restart" class="primary" type="button">もういちど</button>
+        <div class="result-content">
+          <p id="result-kicker" class="result-kicker">CLEANUP COMPLETE</p>
+          <h2 class="result-score"><span id="result-grams">0.0</span><small>g</small></h2>
+          <p id="result-copy" class="result-label">あつめた猫毛</p>
+
+          <div class="result-divider"><span aria-hidden="true">🐾</span></div>
+          <dl class="cat-results">
+            <div class="cat-result-row">
+              <span class="cat-face cat-face-kotaro" role="img" aria-label="虎太郎の顔"></span>
+              <dt>虎太郎の毛</dt>
+              <dd><span id="kotaro-count">0.0</span><small>g</small></dd>
+            </div>
+            <div class="cat-result-row">
+              <span class="cat-face cat-face-yuragi" role="img" aria-label="ゆらぎの顔"></span>
+              <dt>ゆらぎの毛</dt>
+              <dd><span id="yuragi-count">0.0</span><small>g</small></dd>
+            </div>
+          </dl>
+
+          <div class="remaining-result" aria-live="polite">
+            <span class="remaining-fluff" aria-hidden="true"></span>
+            <p id="remaining-copy">お部屋には、あと0個の毛玉が残っています。</p>
+          </div>
+
+          <button id="restart" class="primary result-restart" type="button">もういちど</button>
+          <p class="share-label">結果をシェアする</p>
+          <div class="share-actions" aria-label="結果の共有先">
+            <a id="share-x" class="share-button" href="https://twitter.com/intent/tweet" target="_blank" rel="noopener noreferrer" aria-label="Xで結果をシェア">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.4 2H22l-7.9 9 9.3 11H16l-5.8-7.6L3.6 22H0l8.5-9.7L-.4 2H7.2l5.2 6.9L18.4 2Zm-1.3 18h2L6.1 3.9H4L17.1 20Z" /></svg>
+              <span>Xでシェア</span>
+            </a>
+            <a id="share-threads" class="share-button" href="https://www.threads.net/intent/post" target="_blank" rel="noopener noreferrer" aria-label="Threadsで結果をシェア">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 2C6.3 2 2.8 5.5 2.8 11.8c0 6.4 3.6 10.2 9.5 10.2 5.2 0 8.9-3 8.9-7.3 0-3.1-1.8-5.2-5-6.1-.5-3-2.3-4.5-5.1-4.5-2.7 0-4.8 1.5-5.4 4l2.3.6c.4-1.6 1.4-2.4 3-2.4 1.5 0 2.4.7 2.8 2-4.5-.1-7.2 1.8-7.2 4.9 0 2.4 1.9 4.1 4.6 4.1 3.1 0 5.1-1.7 5.2-4.7v-1.3c1.6.6 2.4 1.7 2.4 3.4 0 3-2.4 5-6.5 5-4.6 0-7.1-2.8-7.1-7.9 0-5 2.4-7.5 7-7.5 3.6 0 5.9 1.6 6.8 4.9l2.3-.7C20.1 4.2 16.9 2 12.2 2Zm1.7 10.2c0 1.9-1 2.9-2.8 2.9-1.3 0-2.1-.7-2.1-1.8 0-1.7 1.6-2.7 4.9-2.7v1.6Z" /></svg>
+              <span>Threadsでシェア</span>
+            </a>
+          </div>
+        </div>
       </section>
     </main>
-    <script type="module" src="./src/game.js?v=start72"></script>
+    <script type="module" src="./src/game.js?v=result1"></script>
   </body>
 </html>
